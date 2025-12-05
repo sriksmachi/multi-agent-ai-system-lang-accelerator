@@ -1,0 +1,54 @@
+[
+ "user-id": "example_user", # pick from token - user object Id or principle name
+ "conversation-id": "GUID", # generate a new GUID for each conversation
+ "history": [
+ {
+    "user-prompt": "Show me the top 10 sites by volume",
+    "timestamp": "2025-10-10T09:00:00Z", # ISO 8601 format, YYYY-MM-DDTHH:MM:SSZ
+    "response":
+    {
+         "response_type": "followup",  # in case of followup question no data, chart, error
+         "needs_followup": "true", # true if followup question is needed
+         "followup_question": "follow up question comes here", # contains data only if needs_followup is true
+         "original_query": "Show me the top 10 sites by volume", # this will always be the original user prompt
+         "chart_url": "",
+         "chart_base64": "",
+         "data": "",
+         "citation": ""
+    }
+ },
+ {
+    "user-prompt": "What are the top 2 by volume?",
+    "timestamp": "2025-10-10T09:05:00Z",
+    "response":
+    {
+         "response_type": "chart", # in case of chart pick chart_base64, data, citation
+         "needs_followup": "false",
+         "followup_question": "",
+         "original_query": "What are the top 2 by volume?",
+         "chart_url": "https://example.com/chart.png",
+         "chart_base64": "akshklashsdgiosdlfug",
+         "data": "JSON array",
+         "citation": "TABLE NAME" # comma separated table names
+    }
+ },
+ {
+    "user-prompt": "Now compare that with profit and loss",
+    "timestamp": "2025-10-10T09:10:00Z",
+    "response":
+    {
+         "response_type": "error", # in case of data pick data, citation
+         "needs_followup": "false",
+         "followup_question": "",
+         "original_query": "Now compare that with profit and loss",
+         "error": "Chart Code Syntax Error",
+         "error_type": "chart_syntax_error",
+         "message": f"Chart generation code has syntax error: {str(e)}",
+         "details": "The AI-generated chart code contains invalid Python syntax. Try rephrasing your visualization request.",
+         "chart_url": "",
+         "chart_base64": "",
+         "data": "",
+         "citation": ""
+    }
+ }]
+]

@@ -1,0 +1,27 @@
+# Langfuse Dockerfile for Azure App Service
+# Based on the official Langfuse image with Azure App Service optimizations
+
+FROM langfuse/langfuse:latest
+
+# Set environment variables for Azure App Service
+ENV PORT=8000
+ENV WEBSITES_PORT=8000
+ENV HOSTNAME="0.0.0.0"
+
+# Azure App Service expects the app to listen on port 8000 or the PORT env var
+# Langfuse uses NEXTAUTH_URL, DATABASE_URL, etc. - set these in App Service Configuration
+
+# The official Langfuse image already includes:
+# - Next.js application
+# - All dependencies
+# - Proper startup scripts
+
+# Health check for App Service
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:${PORT}/api/public/health || exit 1
+
+# Expose the port
+EXPOSE 8000
+
+# The entrypoint and CMD are inherited from langfuse/langfuse:latest
+# which runs the Next.js application

@@ -1,12 +1,18 @@
 # Langfuse Dockerfile for Azure App Service
-# Based on the official Langfuse image with Azure App Service optimizations
-
+# Using PostgreSQL instead of SQLite for better compatibility
 FROM langfuse/langfuse:latest
+
+# Switch to root to create directories and set permissions
+USER root
 
 # Set environment variables for Azure App Service
 ENV PORT=8000
 ENV WEBSITES_PORT=8000
 ENV HOSTNAME="0.0.0.0"
+
+
+# Disable ClickHouse - not required for basic setup
+ENV LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES="false"
 
 # Azure App Service expects the app to listen on port 8000 or the PORT env var
 # Langfuse uses NEXTAUTH_URL, DATABASE_URL, etc. - set these in App Service Configuration
@@ -23,5 +29,8 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
 # Expose the port
 EXPOSE 8000
 
-# The entrypoint and CMD are inherited from langfuse/langfuse:latest
+# Switch back to node user for security
+USER node
+
+# The entrypoint and CMD are inherited from langfuse/langfuse:2
 # which runs the Next.js application

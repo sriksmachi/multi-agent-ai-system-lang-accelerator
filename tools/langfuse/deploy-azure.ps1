@@ -28,19 +28,11 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-Write-Host "✅ Prerequisites check passed" -ForegroundColor Green
-Write-Host ""
-
 # Display configuration
 Write-Host "📋 Deployment Configuration:" -ForegroundColor Cyan
 Write-Host "   Resource Group: $ResourceGroup" -ForegroundColor White
 Write-Host "   Location: $Location" -ForegroundColor White
 Write-Host "   App Service SKU: $AppServiceSku" -ForegroundColor White
-Write-Host ""
-Write-Host "💡 Tip: If you encounter quota limits for $AppServiceSku tier," -ForegroundColor Yellow
-Write-Host "   you can change the SKU by adding: -AppServiceSku S1" -ForegroundColor Yellow
-Write-Host "   Available SKUs: B1 (Basic), S1 (Standard), P1v2, P1v3 (Premium)" -ForegroundColor Yellow
-Write-Host ""
 
 # Generate secrets
 Write-Host "🔐 Generating secure secrets..." -ForegroundColor Cyan
@@ -89,17 +81,35 @@ Write-Host "🔐 Updating container configuration..." -ForegroundColor Cyan
 az webapp config container set `
     --resource-group $ResourceGroup `
     --name $AppService `
-    --docker-custom-image-name "${ACR_LOGIN_SERVER}/langfuse:latest" `
-    --docker-registry-server-url "https://${ACR_LOGIN_SERVER}" `
-    --docker-registry-server-user $ACR_USERNAME `
-    --docker-registry-server-password $ACR_PASSWORD `
+    --container-image-name "${ACR_LOGIN_SERVER}/langfuse:latest" `
+    --container-registry-url "https://${ACR_LOGIN_SERVER}" `
+    --container-registry-user $ACR_USERNAME `
+    --container-registry-password $ACR_PASSWORD `
     --output none
 
 Write-Host "✅ Container configuration updated" -ForegroundColor Green
 Write-Host ""
 
-# Build DATABASE_URL for SQLite
-$DATABASE_URL = "file:/var/lib/langfuse/langfuse.db"
+# Build DATABASE_URL for PostgreSQL
+# Update the username and password below with your actual credentials
+$PostgresUser = "your_postgres_username"
+$PostgresPassword = "your_postgres_password"  # Replace with your actual password
+$PostgresHost = "your-postgres-server.postgres.database.azure.com"
+$PostgresDatabase = "langfuse"
+
+$DATABASE_URL = "postgresql://${PostgresUser}:${PostgresPassword}@${PostgresHost}:5432/${PostgresDatabase}?sslmode=require"
+
+Write-Host "📊 Using PostgreSQL database: $PostgresHost" -ForegroundColor Cyan
+Write-Host ""
+
+# Azure Blob Storage configuration for event uploads
+$BlobAccountName = $StorageAccount
+$BlobAccountKey = ""
+$BlobEndpoint = "https://${BlobAccountName}.blob.core.windows.net"
+$BlobContainer = "langfuse"
+
+Write-Host "📦 Using Azure Blob Storage: $BlobAccountName" -ForegroundColor Cyan
+Write-Host ""
 
 # Configure App Settings
 Write-Host "⚙️  Configuring application settings..." -ForegroundColor Cyan
@@ -111,7 +121,16 @@ az webapp config appsettings set `
         NEXTAUTH_URL="https://${AppService}.azurewebsites.net" `
         NEXTAUTH_SECRET=$NEXTAUTH_SECRET `
         SALT=$SALT `
-        TELEMETRY_ENABLED=0 `
+        TELEMETRY_ENABLED=1 `
+        LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES="false" `
+        LANGFUSE_CLICKHOUSE_ENABLED="false" `
+        CLICKHOUSE_CLUSTER_ENABLED="false" `
+        LANGFUSE_AUTO_CLICKHOUSE_MIGRATION_DISABLED="true" `
+        LANGFUSE_USE_AZURE_BLOB="true" `
+        LANGFUSE_S3_EVENT_UPLOAD_BUCKET=$BlobContainer `
+        LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID=$BlobAccountName `
+        LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY=$BlobAccountKey `
+        LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT=$BlobEndpoint `
         WEBSITES_PORT=8000 `
         PORT=8000 `
     --output none
@@ -140,41 +159,3 @@ Write-Host ""
 # Wait a moment for the container to start
 Write-Host "⏳ Waiting for container to start (30 seconds)..." -ForegroundColor Cyan
 Start-Sleep -Seconds 30
-
-# Get container logs
-Write-Host "📋 Fetching container logs..." -ForegroundColor Cyan
-Write-Host "===========================================================" -ForegroundColor Yellow
-az webapp log tail --resource-group $ResourceGroup --name $AppService --only-show-errors 2>&1 | Select-Object -First 100
-Write-Host "===========================================================" -ForegroundColor Yellow
-Write-Host ""
-
-# Deployment summary
-Write-Host "===========================================================" -ForegroundColor Green
-Write-Host "✅ Deployment Complete!" -ForegroundColor Green
-Write-Host "===========================================================" -ForegroundColor Green
-Write-Host ""
-Write-Host "Resource Group:    $ResourceGroup" -ForegroundColor White
-Write-Host "ACR:               $AcrName" -ForegroundColor White
-Write-Host "Storage Account:   $StorageAccount" -ForegroundColor White
-Write-Host "App Service Plan:  $AppServicePlan (SKU: $AppServiceSku)" -ForegroundColor White
-Write-Host "App Service:       $AppService" -ForegroundColor White
-Write-Host ""
-Write-Host "🌐 Langfuse URL:   https://${AppService}.azurewebsites.net" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "💡 Database Info:" -ForegroundColor Yellow
-Write-Host "   Using SQLite stored in Azure File Share" -ForegroundColor White
-Write-Host "   Database path: /var/lib/langfuse/langfuse.db" -ForegroundColor White
-Write-Host ""
-Write-Host "Next Steps:" -ForegroundColor Yellow
-Write-Host "1. Review the container logs above for any errors" -ForegroundColor White
-Write-Host "2. Wait 2-3 minutes for the application to fully start" -ForegroundColor White
-Write-Host "3. Open the URL above in your browser" -ForegroundColor White
-Write-Host "4. Create your first user account (becomes admin)" -ForegroundColor White
-Write-Host ""
-Write-Host "View live logs with:" -ForegroundColor Yellow
-Write-Host "  az webapp log tail --resource-group $ResourceGroup --name $AppService" -ForegroundColor White
-Write-Host ""
-Write-Host "Check container status:" -ForegroundColor Yellow
-Write-Host "  az webapp show --resource-group $ResourceGroup --name $AppService --query state" -ForegroundColor White
-Write-Host ""
-Write-Host "🎉 Deployment successful!" -ForegroundColor Green

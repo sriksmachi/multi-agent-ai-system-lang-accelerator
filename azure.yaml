@@ -1,0 +1,8 @@
+name: multi-agent-ai-system
+metadata:
+  template: azd-init@1.9.3
+services:
+  api:
+    language: python
+    host: containerapp
+    project: ./api

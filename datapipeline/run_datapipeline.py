@@ -21,9 +21,8 @@ from dotenv import load_dotenv
 from azure.core.credentials import AzureKeyCredential
 from azure.ai.documentintelligence import DocumentIntelligenceClient
 from azure.search.documents import SearchClient
-from azure.search.documents.models import IndexDocumentsAction
 from openai import AzureOpenAI
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 load_dotenv()
 

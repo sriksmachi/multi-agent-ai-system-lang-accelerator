@@ -1,0 +1,8 @@
+Topic: {topic}
+Platform: {platform}
+Tone: {tone}
+
+Research Context:
+{context}
+
+Create a detailed outline for this post.

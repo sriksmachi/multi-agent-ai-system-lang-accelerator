@@ -1,0 +1,72 @@
+targetScope = 'subscription'
+
+@minLength(1)
+@maxLength(64)
+@description('Name of the environment that can be used as part of naming resource convention')
+param environmentName string
+
+@minLength(1)
+@description('Primary location for all resources')
+param location string
+
+@description('Id of the user or app to assign application roles')
+param principalId string = ''
+
+// Tags that should be applied to all resources
+var tags = {
+  'azd-env-name': environmentName
+}
+
+// Organize resources in a resource group
+resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
+  name: 'rg-${environmentName}'
+  location: location
+  tags: tags
+}
+
+// Core infrastructure module
+module resources 'resources.bicep' = {
+  name: 'resources'
+  scope: rg
+  params: {
+    environmentName: environmentName
+    location: location
+    principalId: principalId
+    tags: tags
+  }
+}
+
+// Outputs
+output AZURE_LOCATION string = location
+output AZURE_TENANT_ID string = tenant().tenantId
+output AZURE_RESOURCE_GROUP string = rg.name
+
+// Storage Account outputs
+output AZURE_STORAGE_ACCOUNT_NAME string = resources.outputs.storageAccountName
+output AZURE_STORAGE_ACCOUNT_ID string = resources.outputs.storageAccountId
+
+// Application Insights outputs
+output APPLICATIONINSIGHTS_CONNECTION_STRING string = resources.outputs.applicationInsightsConnectionString
+output APPLICATIONINSIGHTS_NAME string = resources.outputs.applicationInsightsName
+
+// AI Search outputs
+output AZURE_SEARCH_ENDPOINT string = resources.outputs.searchServiceEndpoint
+output AZURE_SEARCH_NAME string = resources.outputs.searchServiceName
+
+// AI Foundry outputs
+output AZURE_AI_FOUNDRY_NAME string = resources.outputs.aiFoundryName
+output AZURE_AI_FOUNDRY_ENDPOINT string = resources.outputs.aiFoundryEndpoint
+
+// Container Apps outputs
+output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = resources.outputs.containerAppsEnvironmentName
+output AZURE_CONTAINER_REGISTRY_NAME string = resources.outputs.containerRegistryName
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.containerRegistryEndpoint
+
+// API outputs
+output API_URI string = resources.outputs.apiUri
+output API_NAME string = resources.outputs.apiName
+
+// Additional outputs
+output AZURE_KEY_VAULT_NAME string = resources.outputs.keyVaultName
+output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = resources.outputs.logAnalyticsWorkspaceName
+output AZURE_AI_HUB_NAME string = resources.outputs.aiHubName

@@ -10,6 +10,7 @@ Endpoints:
 import os
 import uuid
 import json
+import logging
 from datetime import datetime
 from contextlib import asynccontextmanager
 from typing import Dict, AsyncGenerator
@@ -19,61 +20,33 @@ from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from sse_starlette.sse import EventSourceResponse
+from azure.ai.projects import AIProjectClient
+from azure.identity import DefaultAzureCredential
+from azure.monitor.opentelemetry import configure_azure_monitor
+from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor
+
+import uvicorn
 
 from api.schemas import (
-    CreateSessionRequest,
-    CreateSessionResponse,
-    GeneratePostRequest,
+    ChatRequest,
     GeneratePostResponse,
     HealthResponse,
     ErrorResponse,
-    StreamEvent,
 )
-from workflows import run_post_generator, stream_post_generator
-from lib.retriever import FaissRetriever
-from lib.memory import LongTermMemory
-from lib.observability import get_tracer
+
+from workflows import run_post_generator
 
 # Load environment variables
 load_dotenv()
 
-
-# Lifespan context manager for startup/shutdown
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Startup and shutdown events."""
-    # Startup
-    print("Starting Agentic Post Generator API...")
-    print(f"Environment: {os.getenv('DEBUG', 'false')}")
-    print(f"Checkpointer: {os.getenv('CHECKPOINTER', 'memory')}")
-    
-    # Initialize global components (optional pre-loading)
-    try:
-        # Pre-load retriever
-        faiss_path = os.getenv("FAISS_INDEX_PATH", "./data/faiss_index")
-        if os.path.exists(os.path.join(faiss_path, "index.faiss")):
-            print(f"FAISS index available at: {faiss_path}")
-        else:
-            print(f"FAISS index not found at: {faiss_path}")
-            print(f"Run 'python scripts/build_faiss_index.py' to create it")
-    except Exception as e:
-        print(f"Error checking FAISS index: {e}")
-    
-    yield
-    
-    # Shutdown
-    print("Shutting down API...")
-    # Flush any pending traces
-    tracer = get_tracer()
-    tracer.flush()
-
+# Initialize logger
+logger = logging.getLogger(__name__)
 
 # Create FastAPI app
 app = FastAPI(
-    title="Agentic Post Generator",
-    description="Multi-agent system for generating platform-specific social media posts with RAG and evaluation",
+    title="Multi Agent Linked in post generator",
+    description="Multi-agent system for generating platform specific posts using LLMs, KBs, and tools.",
     version="0.1.0",
-    lifespan=lifespan,
 )
 
 # Add CORS middleware (configure for production)
@@ -85,6 +58,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+project_client = AIProjectClient(credential=DefaultAzureCredential(), project_url=os.getenv("AZURE_FOUNDRY_PROJECT_URL"))
+connection_string = project_client.telemetry.get_application_insights_connection_string()
+configure_azure_monitor(connection_string=connection_string)
+OpenAIInstrumentor().instrument()
 
 # Exception handler for HTTPException
 @app.exception_handler(HTTPException)
@@ -98,12 +75,11 @@ async def http_exception_handler(request, exc):
         ).model_dump(),
     )
 
-
 # Exception handler for general exceptions
 @app.exception_handler(Exception)
 async def general_exception_handler(request, exc):
     """Handle unexpected exceptions."""
-    print(f"Unexpected error: {exc}")
+    logger.error(f"Unexpected error: {exc}", exc_info=True)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=ErrorResponse(
@@ -112,7 +88,6 @@ async def general_exception_handler(request, exc):
             detail=str(exc) if os.getenv("DEBUG", "false").lower() == "true" else None,
         ).model_dump(),
     )
-
 
 @app.get("/", include_in_schema=False)
 async def root():
@@ -129,122 +104,22 @@ async def root():
 async def health_check():
     """
     Health check endpoint.
-    
     Returns status of all major components:
-    - Retriever (FAISS)
-    - Long-term memory (Cosmos/in-memory)
-    - Checkpointer (Cosmos/in-memory)
-    - Tracer (Langfuse)
     """
-    components: Dict[str, str] = {}
-    
-    # Check retriever
-    try:
-        faiss_path = os.getenv("FAISS_INDEX_PATH", "./data/faiss_index")
-        if os.path.exists(os.path.join(faiss_path, "index.faiss")):
-            components["retriever"] = "ok"
-        else:
-            components["retriever"] = "not_initialized"
-    except Exception:
-        components["retriever"] = "error"
-    
-    # Check LTM
-    try:
-        ltm = LongTermMemory()
-        components["ltm"] = "ok" if ltm else "error"
-    except Exception:
-        components["ltm"] = "error"
-    
-    # Check checkpointer
-    checkpointer_type = os.getenv("CHECKPOINTER", "memory")
-    components["checkpointer"] = f"ok ({checkpointer_type})"
-    
-    # Check tracer
-    try:
-        tracer = get_tracer()
-        components["tracer"] = "ok" if tracer.enabled else "disabled"
-    except Exception:
-        components["tracer"] = "error"
-    
-    # Overall status
-    has_errors = any(v == "error" for v in components.values())
-    status_value = "degraded" if has_errors else "healthy"
-    message = "Some components unavailable" if has_errors else "All systems operational"
-    
     return HealthResponse(
-        status=status_value,
-        message=message,
-        version="0.1.0",
-        components=components,
+        status="healthy",
+        message="API is running",
+        version="0.1.0"
     )
 
 
 @app.post(
-    "/sessions",
-    response_model=CreateSessionResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create Session",
-    description="Create a new session or resume an existing one",
-)
-async def create_session(request: CreateSessionRequest):
-    """
-    Create a new session for the user.
-    
-    Sessions enable:
-    - Multi-turn conversations
-    - State persistence via checkpointing
-    - User preference loading from LTM
-    
-    Args:
-        request: CreateSessionRequest with user_id and optional platform
-        
-    Returns:
-        CreateSessionResponse with session_id and metadata
-    """
-    try:
-        # Generate unique session ID
-        session_id = f"session-{request.user_id}-{uuid.uuid4().hex[:8]}"
-        
-        # Initialize LTM and load/create user preferences
-        ltm = LongTermMemory()
-        user_prefs = ltm.get_user_preferences(request.user_id)
-        
-        if not user_prefs:
-            # Create default preferences for new user
-            ltm.upsert_user_preferences(
-                request.user_id,
-                {
-                    "user_id": request.user_id,
-                    "preferred_tone": "professional",
-                    "platform_defaults": {
-                        request.platform: {}
-                    },
-                }
-            )
-            print(f"   Created default preferences for user: {request.user_id}")
-        
-        return CreateSessionResponse(
-            session_id=session_id,
-            user_id=request.user_id,
-            platform=request.platform,
-            message="Session created successfully",
-        )
-        
-    except Exception as e:
-        print(f"Error creating session: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create session: {str(e)}",
-        )
-
-
-@app.post(
-    "/posts:generate",
+    "/chat",
     response_model=GeneratePostResponse,
-    summary="Generate Post",
-    description="Generate a platform-specific social media post using the multi-agent workflow",
+    summary="Chat Endpoint",
+    description="Generate social media post based on user input.",
 )
-async def generate_post(request: GeneratePostRequest):
+async def generate_post(request: ChatRequest):
     """
     Generate a social media post.
     
@@ -256,38 +131,19 @@ async def generate_post(request: GeneratePostRequest):
     5. (Conditional) Loop back to Writer for refinement
     
     Args:
-        request: GeneratePostRequest with session_id, topic, platform, tone
+        request: ChatRequest with user_id and query
         
     Returns:
-        GeneratePostResponse with post_markdown, scores, trace_url
+        GeneratePostResponse with post and platform
         
     Raises:
         HTTPException: If generation fails
     """
     try:
-        print(f"\n{'='*60}")
-        print(f"POST GENERATION REQUEST")
-        print(f"Session: {request.session_id}")
-        print(f"Topic: {request.topic}")
-        print(f"Platform: {request.platform or 'default'}")
-        print(f"{'='*60}\n")
-        
-        # Extract user_id from session_id (format: session-{user_id}-{random})
-        try:
-            user_id = request.session_id.split("-")[1]
-        except IndexError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid session_id format. Use POST /sessions to create a valid session.",
-            )
-        
         # Run the workflow
         result = run_post_generator(
-            user_id=user_id,
-            session_id=request.session_id,
-            topic=request.topic,
-            platform=request.platform or "linkedin",
-            tone=request.tone,
+            user_id=request.user_id,
+            topic=request.query           
         )
         
         return GeneratePostResponse(**result)
@@ -299,97 +155,14 @@ async def generate_post(request: GeneratePostRequest):
             detail=f"Retriever error: {str(e)}. Ensure FAISS index is built.",
         )
     except Exception as e:
-        print(f"Error generating post: {e}")
+        logger.error(f"Error generating post: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Post generation failed: {str(e)}",
         )
 
-
-@app.post(
-    "/posts:generate:stream",
-    summary="Generate Post (Streaming)",
-    description="Generate a post with real-time progress updates via Server-Sent Events (SSE)",
-)
-async def generate_post_stream(request: GeneratePostRequest):
-    """
-    Generate a social media post with streaming progress updates.
-    
-    Returns Server-Sent Events (SSE) for each step:
-    - node_start: Agent starts execution
-    - progress: Intermediate progress updates
-    - node_end: Agent completes execution
-    - complete: Final result with post and scores
-    - error: Error occurred
-    
-    Args:
-        request: GeneratePostRequest with session_id, topic, platform, tone
-        
-    Returns:
-        EventSourceResponse with streaming events
-        
-    Example client usage:
-        ```javascript
-        const eventSource = new EventSource('/posts:generate:stream');
-        eventSource.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            console.log(data.message);
-        };
-        ```
-    """
-    # Extract user_id from session_id
-    try:
-        user_id = request.session_id.split("-")[1]
-    except IndexError:
-        async def error_generator():
-            yield {
-                "event": "error",
-                "data": json.dumps({
-                    "error": "InvalidSessionError",
-                    "message": "Invalid session_id format. Use POST /sessions to create a valid session.",
-                })
-            }
-        return EventSourceResponse(error_generator())
-    
-    async def event_generator() -> AsyncGenerator[dict, None]:
-        """
-        Generate SSE events as the workflow executes.
-        """
-        try:
-            # Stream the workflow execution
-            async for event in stream_post_generator(
-                user_id=user_id,
-                session_id=request.session_id,
-                topic=request.topic,
-                platform=request.platform or "linkedin",
-                tone=request.tone,
-            ):
-                # Add timestamp to each event
-                event["timestamp"] = datetime.utcnow().isoformat() + "Z"
-                
-                # Yield SSE-formatted event
-                yield {
-                    "event": event.get("event", "progress"),
-                    "data": json.dumps(event)
-                }
-        
-        except Exception as e:
-            print(f"Error in streaming generation: {e}")
-            yield {
-                "event": "error",
-                "data": json.dumps({
-                    "event": "error",
-                    "message": f"Post generation failed: {str(e)}",
-                    "timestamp": datetime.utcnow().isoformat() + "Z"
-                })
-            }
-    
-    return EventSourceResponse(event_generator())
-
-
 if __name__ == "__main__":
-    import uvicorn
-    
+
     # Run with: python -m api.main
     # Or: uvicorn api.main:app --reload
     
@@ -397,8 +170,8 @@ if __name__ == "__main__":
     port = int(os.getenv("API_PORT", "8000"))
     reload = os.getenv("API_RELOAD", "true").lower() == "true"
     
-    print(f"Starting server at http://{host}:{port}")
-    print(f"API docs at http://{host}:{port}/docs")
+    logger.info(f"Starting server at http://{host}:{port}")
+    logger.info(f"API docs at http://{host}:{port}/docs")
     
     uvicorn.run(
         "api.main:app",

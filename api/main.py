@@ -24,7 +24,10 @@ from azure.ai.projects import AIProjectClient
 from azure.identity import DefaultAzureCredential
 from azure.monitor.opentelemetry import configure_azure_monitor
 from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry import trace
 
+from azure.core.settings import settings
 import uvicorn
 
 from api.schemas import (
@@ -42,6 +45,37 @@ load_dotenv()
 # Initialize logger
 logger = logging.getLogger(__name__)
 
+# Suppress noisy Azure loggers
+logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
+logging.getLogger("azure.monitor.opentelemetry.exporter.export._base").setLevel(logging.WARNING)
+
+# Initialize tracer
+tracer = trace.get_tracer(__name__)
+# settings.tracing_implementation = "opentelemetry"
+
+# Initialize telemetry only once (prevents TracerProvider override errors during reload)
+_telemetry_initialized = False
+
+def initialize_telemetry():
+    """Initialize Azure Monitor telemetry and OpenTelemetry instrumentations."""
+    global _telemetry_initialized
+    if _telemetry_initialized:
+        logger.info("Telemetry already initialized, skipping")
+        return
+    
+    try:
+        project_client = AIProjectClient(
+            credential=DefaultAzureCredential(), 
+            endpoint=os.getenv("AZURE_FOUNDRY_PROJECT_URL")
+        )
+        connection_string = project_client.telemetry.get_application_insights_connection_string()
+        configure_azure_monitor(connection_string=connection_string)
+        OpenAIInstrumentor().instrument()
+        _telemetry_initialized = True
+        logger.info("Telemetry configured successfully")
+    except Exception as e:
+        logger.error(f"Failed to configure telemetry: {e}", exc_info=True)
+
 # Create FastAPI app
 app = FastAPI(
     title="Multi Agent Linked in post generator",
@@ -58,10 +92,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-project_client = AIProjectClient(credential=DefaultAzureCredential(), project_url=os.getenv("AZURE_FOUNDRY_PROJECT_URL"))
-connection_string = project_client.telemetry.get_application_insights_connection_string()
-configure_azure_monitor(connection_string=connection_string)
-OpenAIInstrumentor().instrument()
+# Initialize telemetry on startup
+@app.on_event("startup")
+async def startup_event():
+    """Initialize telemetry when the app starts."""
+    initialize_telemetry()
+    # Instrument FastAPI after app is created
+    FastAPIInstrumentor.instrument_app(app)
 
 # Exception handler for HTTPException
 @app.exception_handler(HTTPException)
@@ -94,7 +131,6 @@ async def root():
     """Root endpoint redirect to docs."""
     return {"message": "Agentic Post Generator API", "docs": "/docs", "health": "/health"}
 
-
 @app.get(
     "/health",
     response_model=HealthResponse,
@@ -112,7 +148,6 @@ async def health_check():
         version="0.1.0"
     )
 
-
 @app.post(
     "/chat",
     response_model=GeneratePostResponse,
@@ -123,13 +158,6 @@ async def generate_post(request: ChatRequest):
     """
     Generate a social media post.
     
-    Workflow:
-    1. Planner: Create outline + retrieve context
-    2. Writer: Generate draft
-    3. Fact-Checker: Evaluate with DeepEval
-    4. Router: Decide refine or finish
-    5. (Conditional) Loop back to Writer for refinement
-    
     Args:
         request: ChatRequest with user_id and query
         
@@ -139,27 +167,47 @@ async def generate_post(request: ChatRequest):
     Raises:
         HTTPException: If generation fails
     """
-    try:
-        # Run the workflow
-        result = run_post_generator(
-            user_id=request.user_id,
-            topic=request.query           
-        )
-        
-        return GeneratePostResponse(**result)
-        
-    except ValueError as e:
-        # Handle retriever errors (e.g., FAISS index not found)
-        raise HTTPException(
-            status_code=status.HTTP_424_FAILED_DEPENDENCY,
-            detail=f"Retriever error: {str(e)}. Ensure FAISS index is built.",
-        )
-    except Exception as e:
-        logger.error(f"Error generating post: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Post generation failed: {str(e)}",
-        )
+    with tracer.start_as_current_span(
+        "generate_post_api",
+        attributes={
+            "user_id": request.user_id,
+            "query": request.query,
+        }
+    ) as span:
+        try:
+            logger.info(f"[{request.user_id}] API: Received post generation request for query: {request.query}")
+
+            # Run the workflow
+            result = run_post_generator(
+                user_id=request.user_id,
+                topic=request.query
+            )
+            
+            span.set_attribute("success", True)
+            span.set_attribute("trace_id", result.get("trace_id", ""))
+            
+            
+            logger.info(f"[{request.user_id}] API: Post generation completed successfully")
+            
+            return GeneratePostResponse(**result)
+            
+        except ValueError as e:
+            # Handle retriever errors (e.g., FAISS index not found)
+            span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
+            span.record_exception(e)
+            logger.error(f"[{request.user_id}] API: Retriever error: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_424_FAILED_DEPENDENCY,
+                detail=f"Retriever error: {str(e)}. Ensure FAISS index is built.",
+            )
+        except Exception as e:
+            span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
+            span.record_exception(e)
+            logger.error(f"[{request.user_id}] API: Error generating post: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Post generation failed: {str(e)}",
+            )
 
 if __name__ == "__main__":
 

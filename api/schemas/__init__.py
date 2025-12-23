@@ -15,8 +15,12 @@ class ChatRequest(BaseModel):
     
 class GeneratePostResponse(BaseModel):
     """Response schema for generated social media post."""
-    post: str = Field(..., description="Generated social media post content")
+    post_markdown: str = Field(..., description="Generated social media post content in markdown")
     platform: str = Field(..., description="Target platform for the post")
+    scores: dict = Field(default_factory=dict, description="Quality evaluation scores")
+    refinement_count: int = Field(default=0, description="Number of refinement iterations")
+    trace_id: str = Field(..., description="OpenTelemetry trace ID for debugging")
+    conversation_id: str = Field(..., description="Conversation identifier")
     
 class ErrorResponse(BaseModel):
     """Standard error response schema."""

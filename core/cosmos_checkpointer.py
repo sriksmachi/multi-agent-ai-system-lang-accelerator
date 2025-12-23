@@ -147,9 +147,9 @@ class CosmosDBCheckpointer(BaseCheckpointSaver):
         """
         super().__init__()
 
-        self.endpoint = os.getenv("COSMOSDB_ENDPOINT")
-        self.database_name = os.getenv("COSMOS_DB_NAME", "content-generation-db")
-        self.container_name = os.getenv("COSMOS_CONTAINER_NAME", "chat-history")
+        self.endpoint = os.getenv("COSMOS_ENDPOINT")
+        self.database_name = os.getenv("COSMOS_DATABASE_NAME", "content-generation-db")
+        self.container_name = os.getenv("COSMOS_CHECKPOINTS_CONTAINER", "chat-history")
         self.use_managed_identity = os.getenv("USE_MANAGED_IDENTITY", "false").lower() == "true"
         self.ttl_seconds = int(os.getenv("SESSION_TTL_SECONDS", "5184000"))  # 60 days
 

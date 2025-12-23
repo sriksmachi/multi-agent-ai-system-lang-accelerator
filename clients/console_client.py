@@ -21,9 +21,23 @@ def chat(query: str):
         
         if response.status_code == 200:
             result = response.json()
+            
+            # Display final post
+            print("\n" + "=" * 80)
+            print("✅ FINAL POST")
             print("=" * 80)
-            print(result.get("post", ""))
+            print(f"\n{result.get('post', result.get('post_markdown', ''))}\n")
             print("=" * 80)
+            
+            # Display metadata
+            if 'scores' in result:
+                print(f"📊 Quality Scores: {result['scores']}")
+            if 'refinement_count' in result:
+                print(f"🔄 Refinements: {result['refinement_count']}")
+            if 'trace_id' in result:
+                print(f"🔗 Trace ID: {result['trace_id']}")
+            print("=" * 80 + "\n")
+            
             return result
         else:
             print(f"❌ Error {response.status_code}: {response.json().get('message')}")

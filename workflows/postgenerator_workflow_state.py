@@ -42,7 +42,7 @@ class PostGeneratorState(BaseModel):
     
     # Output
     final_post: str = Field(default="", description="Final approved post")
-    trace_id: Optional[str] = Field(default=None, description="Langfuse trace ID")
+    thread_id: Optional[str] = Field(default=None, description="Thread identifier for tracing")
     
     class Config:
         """Pydantic configuration."""

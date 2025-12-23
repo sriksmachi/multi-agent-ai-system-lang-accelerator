@@ -9,17 +9,23 @@ Implements the Planner → Researcher → Writer → Reviewer pattern with:
 """
 
 import os
-import logging
 from typing import Literal, Dict, Any
 from datetime import datetime
 
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.memory import MemorySaver
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
+from agents.writer_agent.agent import write_post
 
 from .postgenerator_workflow_state import PostGeneratorState
 from core.logging_config import get_logger
+from core.cosmos_checkpointer import CosmosDBCheckpointer
+import uuid
+
+from agents.planner_agent.agent import create_plan
+from agents.researcher_agent.agent import research_topic
+from agents.reviewer_agent.agent import check_facts
+
 
 # Initialize logger and tracer
 logger = get_logger(__name__)
@@ -29,7 +35,6 @@ tracer = trace.get_tracer(__name__)
 # ============================================================================
 # PLANNER NODE - Creates structured outline and strategy
 # ============================================================================
-
 def planner_node(state: PostGeneratorState) -> Dict[str, Any]:
     """
     Planner Agent: Creates a structured outline for the post.
@@ -48,6 +53,7 @@ def planner_node(state: PostGeneratorState) -> Dict[str, Any]:
     user_id = state.user_id
     topic = state.topic
     platform = state.platform
+    thread_id = state.thread_id
     
     with tracer.start_as_current_span(
         "planner_node",
@@ -59,12 +65,18 @@ def planner_node(state: PostGeneratorState) -> Dict[str, Any]:
     ) as span:
         try:
             logger.info(
-                f"[{user_id}] PLANNER: Creating outline for topic '{topic}' on {platform}",
-                extra={"user_id": user_id, "topic": topic, "platform": platform}
+                f"[{user_id}][{thread_id}] PLANNER: Creating outline for topic '{topic}' on {platform}",
+                extra={
+                    "user_id": user_id,
+                    "thread_id": thread_id,
+                    "topic": topic,
+                    "platform": platform,
+                    "input_state": state.model_dump()
+                }
             )
             
             # Import here to avoid circular dependencies
-            from agents.planner_agent.planner_agent import create_plan
+ 
             
             # Create plan
             plan_result = create_plan(state.model_dump())
@@ -83,27 +95,30 @@ def planner_node(state: PostGeneratorState) -> Dict[str, Any]:
             span.set_status(Status(StatusCode.OK))
             
             logger.info(
-                f"[{user_id}] PLANNER: Created plan with {len(updates['plan'])} characters",
-                extra={"user_id": user_id, "plan_length": len(updates["plan"])}
+                f"[{user_id}][{thread_id}] PLANNER: Created plan with {len(updates['plan'])} characters",
+                extra={
+                    "user_id": user_id,
+                    "plan_length": len(updates["plan"]),
+                    "output_updates": updates
+                }
             )
             
             return updates
             
         except Exception as e:
             logger.error(
-                f"[{user_id}] PLANNER: Error creating plan: {e}",
+                f"[{user_id}][{thread_id}] PLANNER: Error creating plan: {e}",
                 extra={"user_id": user_id, "error": str(e)},
                 exc_info=True
             )
             span.set_status(Status(StatusCode.ERROR, str(e)))
             span.record_exception(e)
             raise
-
-
+    
+   
 # ============================================================================
 # RESEARCHER NODE - Retrieves relevant context
 # ============================================================================
-
 def researcher_node(state: PostGeneratorState) -> Dict[str, Any]:
     """
     Researcher Agent: Retrieves relevant context and information.
@@ -122,6 +137,7 @@ def researcher_node(state: PostGeneratorState) -> Dict[str, Any]:
     user_id = state.user_id
     topic = state.topic
     plan = state.plan
+    thread_id = state.thread_id
     
     with tracer.start_as_current_span(
         "researcher_node",
@@ -133,12 +149,9 @@ def researcher_node(state: PostGeneratorState) -> Dict[str, Any]:
     ) as span:
         try:
             logger.info(
-                f"[{user_id}] RESEARCHER: Retrieving context for topic '{topic}'",
-                extra={"user_id": user_id, "topic": topic}
+                f"[{user_id}][{thread_id}] RESEARCHER: Retrieving context for topic '{topic}'",
+                extra={"user_id": user_id, "thread_id": thread_id, "topic": topic}
             )
-            
-            # Import here to avoid circular dependencies
-            from agents.researcher_agent.agent import research_topic
             
             # Perform research
             research_result = research_topic(state.model_dump())
@@ -162,9 +175,10 @@ def researcher_node(state: PostGeneratorState) -> Dict[str, Any]:
             span.set_status(Status(StatusCode.OK))
             
             logger.info(
-                f"[{user_id}] RESEARCHER: Retrieved {len(retrieved_docs)} documents, {len(context)} chars of context",
+                f"[{user_id}][{thread_id}] RESEARCHER: Retrieved {len(retrieved_docs)} documents, {len(context)} chars of context",
                 extra={
                     "user_id": user_id,
+                    "thread_id": thread_id,
                     "docs_count": len(retrieved_docs),
                     "context_length": len(context)
                 }
@@ -174,8 +188,8 @@ def researcher_node(state: PostGeneratorState) -> Dict[str, Any]:
             
         except Exception as e:
             logger.error(
-                f"[{user_id}] RESEARCHER: Error retrieving context: {e}",
-                extra={"user_id": user_id, "error": str(e)},
+                f"[{user_id}][{thread_id}] RESEARCHER: Error retrieving context: {e}",
+                extra={"user_id": user_id, "thread_id": thread_id, "error": str(e)},
                 exc_info=True
             )
             span.set_status(Status(StatusCode.ERROR, str(e)))
@@ -207,6 +221,7 @@ def writer_node(state: PostGeneratorState) -> Dict[str, Any]:
     topic = state.topic
     platform = state.platform
     refinement_count = state.refinement_count
+    thread_id = state.thread_id
     
     with tracer.start_as_current_span(
         "writer_node",
@@ -222,9 +237,11 @@ def writer_node(state: PostGeneratorState) -> Dict[str, Any]:
             action = "Refining" if is_refinement else "Writing"
             
             logger.info(
-                f"[{user_id}] WRITER: {action} post for {platform} (attempt {refinement_count + 1})",
+                f"[{user_id}][{thread_id}] WRITER: {action} post for topic '{topic}' on {platform} (attempt {refinement_count + 1})",
                 extra={
                     "user_id": user_id,
+                    "thread_id": thread_id,
+                    "topic": topic,
                     "platform": platform,
                     "refinement_count": refinement_count,
                     "is_refinement": is_refinement
@@ -232,7 +249,6 @@ def writer_node(state: PostGeneratorState) -> Dict[str, Any]:
             )
             
             # Import here to avoid circular dependencies
-            from agents.reviewer_agent.agent import write_post
             
             # Generate post
             write_result = write_post(state.model_dump())
@@ -254,9 +270,10 @@ def writer_node(state: PostGeneratorState) -> Dict[str, Any]:
             span.set_status(Status(StatusCode.OK))
             
             logger.info(
-                f"[{user_id}] WRITER: Generated draft with {len(draft)} characters",
+                f"[{user_id}][{thread_id}] WRITER: Generated draft with {len(draft)} characters",
                 extra={
                     "user_id": user_id,
+                    "thread_id": thread_id,
                     "draft_length": len(draft),
                     "refinement_count": refinement_count
                 }
@@ -266,8 +283,8 @@ def writer_node(state: PostGeneratorState) -> Dict[str, Any]:
             
         except Exception as e:
             logger.error(
-                f"[{user_id}] WRITER: Error generating post: {e}",
-                extra={"user_id": user_id, "error": str(e)},
+                f"[{user_id}][{thread_id}] WRITER: Error generating post: {e}",
+                extra={"user_id": user_id, "thread_id": thread_id, "error": str(e)},
                 exc_info=True
             )
             span.set_status(Status(StatusCode.ERROR, str(e)))
@@ -298,6 +315,7 @@ def reviewer_node(state: PostGeneratorState) -> Dict[str, Any]:
     user_id = state.user_id
     draft = state.draft
     topic = state.topic
+    thread_id = state.thread_id
     
     with tracer.start_as_current_span(
         "reviewer_node",
@@ -309,12 +327,9 @@ def reviewer_node(state: PostGeneratorState) -> Dict[str, Any]:
     ) as span:
         try:
             logger.info(
-                f"[{user_id}] REVIEWER: Evaluating post quality",
-                extra={"user_id": user_id, "draft_length": len(draft)}
+                f"[{user_id}][{thread_id}] REVIEWER: Evaluating post quality for topic '{topic}'",
+                extra={"user_id": user_id, "thread_id": thread_id, "topic": topic, "draft_length": len(draft)}
             )
-            
-            # Import here to avoid circular dependencies
-            from agents.reviewer_agent.agent import check_facts
             
             # Review post
             review_result = check_facts(state.model_dump())
@@ -344,9 +359,10 @@ def reviewer_node(state: PostGeneratorState) -> Dict[str, Any]:
             span.set_status(Status(StatusCode.OK))
             
             logger.info(
-                f"[{user_id}] REVIEWER: Scores - {scores}, Needs refinement: {needs_refinement}",
+                f"[{user_id}][{thread_id}] REVIEWER: Scores - {scores}, Needs refinement: {needs_refinement}",
                 extra={
                     "user_id": user_id,
+                    "thread_id": thread_id,
                     "scores": scores,
                     "needs_refinement": needs_refinement
                 }
@@ -356,8 +372,8 @@ def reviewer_node(state: PostGeneratorState) -> Dict[str, Any]:
             
         except Exception as e:
             logger.error(
-                f"[{user_id}] REVIEWER: Error evaluating post: {e}",
-                extra={"user_id": user_id, "error": str(e)},
+                f"[{user_id}][{thread_id}] REVIEWER: Error evaluating post: {e}",
+                extra={"user_id": user_id, "thread_id": thread_id, "error": str(e)},
                 exc_info=True
             )
             span.set_status(Status(StatusCode.ERROR, str(e)))
@@ -388,6 +404,8 @@ def router_node(state: PostGeneratorState) -> Dict[str, Any]:
     needs_refinement = state.needs_refinement
     refinement_count = state.refinement_count
     max_refinements = state.max_refinements
+    topic = state.topic
+    thread_id = state.thread_id
     
     with tracer.start_as_current_span(
         "router_node",
@@ -400,9 +418,11 @@ def router_node(state: PostGeneratorState) -> Dict[str, Any]:
     ) as span:
         try:
             logger.info(
-                f"[{user_id}] ROUTER: Making routing decision",
+                f"[{user_id}][{thread_id}] ROUTER: Making routing decision for topic '{topic}'",
                 extra={
                     "user_id": user_id,
+                    "thread_id": thread_id,
+                    "topic": topic,
                     "needs_refinement": needs_refinement,
                     "refinement_count": refinement_count,
                     "max_refinements": max_refinements
@@ -416,8 +436,8 @@ def router_node(state: PostGeneratorState) -> Dict[str, Any]:
                 updates["final_post"] = state.draft
                 decision = "finalize"
                 logger.info(
-                    f"[{user_id}] ROUTER: Quality acceptable, finalizing post",
-                    extra={"user_id": user_id, "decision": decision}
+                    f"[{user_id}][{thread_id}] ROUTER: Quality acceptable, finalizing post",
+                    extra={"user_id": user_id, "thread_id": thread_id, "decision": decision}
                 )
             elif refinement_count >= max_refinements:
                 # Max refinements reached
@@ -425,9 +445,10 @@ def router_node(state: PostGeneratorState) -> Dict[str, Any]:
                 updates["needs_refinement"] = False
                 decision = "finalize (max refinements)"
                 logger.warning(
-                    f"[{user_id}] ROUTER: Max refinements ({max_refinements}) reached, finalizing anyway",
+                    f"[{user_id}][{thread_id}] ROUTER: Max refinements ({max_refinements}) reached, finalizing anyway",
                     extra={
                         "user_id": user_id,
+                        "thread_id": thread_id,
                         "decision": decision,
                         "refinement_count": refinement_count
                     }
@@ -437,9 +458,10 @@ def router_node(state: PostGeneratorState) -> Dict[str, Any]:
                 updates["refinement_count"] = refinement_count + 1
                 decision = f"refine (attempt {refinement_count + 2})"
                 logger.info(
-                    f"[{user_id}] ROUTER: Sending back for refinement (attempt {refinement_count + 2}/{max_refinements})",
+                    f"[{user_id}][{thread_id}] ROUTER: Sending back for refinement (attempt {refinement_count + 2}/{max_refinements})",
                     extra={
                         "user_id": user_id,
+                        "thread_id": thread_id,
                         "decision": decision,
                         "next_refinement": refinement_count + 1
                     }
@@ -452,8 +474,8 @@ def router_node(state: PostGeneratorState) -> Dict[str, Any]:
             
         except Exception as e:
             logger.error(
-                f"[{user_id}] ROUTER: Error making routing decision: {e}",
-                extra={"user_id": user_id, "error": str(e)},
+                f"[{user_id}][{thread_id}] ROUTER: Error making routing decision: {e}",
+                extra={"user_id": user_id, "thread_id": thread_id, "error": str(e)},
                 exc_info=True
             )
             span.set_status(Status(StatusCode.ERROR, str(e)))
@@ -506,42 +528,35 @@ def build_post_generator_workflow() -> StateGraph:
     Returns:
         Compiled StateGraph ready for execution
     """
-    with tracer.start_as_current_span("build_workflow") as span:
-        logger.info("Building post generator workflow")
-        
-        # Create workflow
-        workflow = StateGraph(PostGeneratorState)
-        
-        # Add nodes
-        workflow.add_node("planner", planner_node)
-        workflow.add_node("researcher", researcher_node)
-        workflow.add_node("writer", writer_node)
-        workflow.add_node("reviewer", reviewer_node)
-        workflow.add_node("router", router_node)
-        
-        # Define edges (linear flow with conditional loop)
-        workflow.add_edge("planner", "researcher")
-        workflow.add_edge("researcher", "writer")
-        workflow.add_edge("writer", "reviewer")
-        workflow.add_edge("reviewer", "router")
-        
-        # Conditional routing from router
-        workflow.add_conditional_edges(
-            "router",
-            should_refine,
-            {
-                "refine": "writer",  # Loop back for refinement
-                "end": END,          # Finish workflow
-            }
-        )
-        
-        # Set entry point
-        workflow.set_entry_point("planner")
-        
-        span.set_status(Status(StatusCode.OK))
-        logger.info("Post generator workflow built successfully")
-        
-        return workflow
+     # Create workflow
+    workflow = StateGraph(PostGeneratorState)
+    
+    # Add nodes
+    workflow.add_node("planner", planner_node)
+    workflow.add_node("researcher", researcher_node)
+    workflow.add_node("writer", writer_node)
+    workflow.add_node("reviewer", reviewer_node)
+    workflow.add_node("router", router_node)
+    
+    # Define edges (linear flow with conditional loop)
+    workflow.add_edge("planner", "researcher")
+    workflow.add_edge("researcher", "writer")
+    workflow.add_edge("writer", "reviewer")
+    workflow.add_edge("reviewer", "router")
+    
+    # Conditional routing from router
+    workflow.add_conditional_edges(
+        "router",
+        should_refine,
+        {
+            "refine": "writer",  # Loop back for refinement
+            "end": END,          # Finish workflow
+        }
+    )
+    
+    # Set entry point
+    workflow.set_entry_point("planner")
+    return workflow
 
 
 # ============================================================================
@@ -554,6 +569,8 @@ def run_post_generator(
     platform: str = "linkedin",
     tone: str = None,
     max_refinements: int = None,
+    thread_id: str = None,
+    
 ) -> Dict[str, Any]:
     """
     Execute the post generator workflow.
@@ -570,43 +587,68 @@ def run_post_generator(
     """
     # Generate conversation ID
     conversation_id = f"conv-{user_id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+    thread_id = thread_id or str(uuid.uuid4())
     
     with tracer.start_as_current_span(
         "run_post_generator",
         attributes={
             "user_id": user_id,
             "conversation_id": conversation_id,
+            "thread_id": thread_id,
             "topic": topic,
             "platform": platform,
         }
     ) as span:
         try:
+            
             logger.info(
-                f"[{user_id}] Starting post generation workflow",
+                f"[{user_id}][{thread_id}] Starting post generation workflow",
                 extra={
                     "user_id": user_id,
                     "conversation_id": conversation_id,
+                    "thread_id": thread_id,
                     "topic": topic,
                     "platform": platform,
                     "tone": tone
                 }
             )
             
-            # Build and compile workflow
+            # Build workflow
             workflow = build_post_generator_workflow()
-            compiled_workflow = workflow.compile()
+            
+            # Initialize Cosmos DB checkpointer
+            logger.info(f"[{user_id}][{thread_id}] Initializing Cosmos DB checkpointer")
+            checkpointer = CosmosDBCheckpointer()
+            
+            # Compile workflow with or without checkpointer
+            if checkpointer.container:
+                logger.info(f"[{user_id}][{thread_id}] Cosmos DB checkpointer ready")
+                compiled_workflow = workflow.compile(checkpointer=checkpointer)
+                logger.info(f"[{user_id}][{thread_id}] Graph compiled with checkpointer")
+            else:
+                logger.warning(f"[{user_id}][{thread_id}] Cosmos DB not available, compiling without checkpointer")
+                compiled_workflow = workflow.compile()
+            
+            # Configure checkpointing
+            config = {
+                "configurable": {
+                    "thread_id": thread_id,
+                    "checkpoint_ns": "",
+                }
+            }
             
             # Initialize state
             initial_state = PostGeneratorState(
                 user_id=user_id,
                 topic=topic,
                 platform=platform,
+                thread_id=thread_id,
                 tone=tone,
                 max_refinements=max_refinements or int(os.getenv("MAX_REFINEMENT_LOOPS", "2"))
             )
             
-            # Execute workflow
-            result = compiled_workflow.invoke(initial_state.model_dump())
+            # Execute workflow with checkpoint config
+            result = compiled_workflow.invoke(initial_state.model_dump(), config=config)
             
             # Extract final results
             final_post = result.get("final_post", "")
@@ -631,24 +673,37 @@ def run_post_generator(
             span.set_status(Status(StatusCode.OK))
             
             logger.info(
-                f"[{user_id}] Post generation completed successfully",
+                f"[{user_id}][{thread_id}] Post generation completed successfully",
                 extra={
                     "user_id": user_id,
                     "conversation_id": conversation_id,
+                    "thread_id": thread_id,
                     "refinement_count": refinement_count,
                     "post_length": len(final_post),
                     "trace_id": trace_id
                 }
             )
             
+            # Print final post to console
+            print("\n" + "="*80)
+            print("✅ FINAL POST GENERATED")
+            print("="*80)
+            print(f"\n{final_post}\n")
+            print("="*80)
+            print(f"📊 Quality Scores: {scores}")
+            print(f"🔄 Refinements: {refinement_count}")
+            print(f"🔗 Trace ID: {trace_id}")
+            print("="*80 + "\n")
+            
             return output
             
         except Exception as e:
             logger.error(
-                f"[{user_id}] Post generation failed: {e}",
+                f"[{user_id}][{thread_id}] Post generation failed: {e}",
                 extra={
                     "user_id": user_id,
                     "conversation_id": conversation_id,
+                    "thread_id": thread_id,
                     "error": str(e)
                 },
                 exc_info=True

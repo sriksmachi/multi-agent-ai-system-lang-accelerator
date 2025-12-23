@@ -56,64 +56,57 @@ def planner_node(state: PostGeneratorState) -> Dict[str, Any]:
     thread_id = state.thread_id
     
     with tracer.start_as_current_span(
-        "planner_node",
+        "planner.create_outline",
         attributes={
-            "user_id": user_id,
+            "agent.name": "planner",
+            "agent.user_id": user_id,
+            "agent.thread_id": thread_id,
+            "workflow.step": "plan",
             "topic": topic,
             "platform": platform,
         }
     ) as span:
-        try:
-            logger.info(
-                f"[{user_id}][{thread_id}] PLANNER: Creating outline for topic '{topic}' on {platform}",
-                extra={
-                    "user_id": user_id,
-                    "thread_id": thread_id,
-                    "topic": topic,
-                    "platform": platform,
-                    "input_state": state.model_dump()
-                }
-            )
-            
-            # Import here to avoid circular dependencies
- 
-            
-            # Create plan
-            plan_result = create_plan(state.model_dump())
-            
-            # Update state
-            updates = {
-                "plan": plan_result.get("plan", ""),
-                "messages": state.messages + [{
-                    "role": "planner",
-                    "content": plan_result.get("plan", ""),
-                    "timestamp": datetime.utcnow().isoformat()
-                }]
+        span.add_event("planner_started", {"topic": topic})
+        
+        logger.info(
+            f"[{user_id}][{thread_id}] PLANNER: Creating outline for topic '{topic}' on {platform}",
+            extra={
+                "user_id": user_id,
+                "thread_id": thread_id,
+                "topic": topic,
+                "platform": platform,
+                "input_state": state.model_dump()
             }
-            
-            span.set_attribute("plan_length", len(updates["plan"]))
-            span.set_status(Status(StatusCode.OK))
-            
-            logger.info(
-                f"[{user_id}][{thread_id}] PLANNER: Created plan with {len(updates['plan'])} characters",
-                extra={
-                    "user_id": user_id,
-                    "plan_length": len(updates["plan"]),
-                    "output_updates": updates
-                }
-            )
-            
-            return updates
-            
-        except Exception as e:
-            logger.error(
-                f"[{user_id}][{thread_id}] PLANNER: Error creating plan: {e}",
-                extra={"user_id": user_id, "error": str(e)},
-                exc_info=True
-            )
-            span.set_status(Status(StatusCode.ERROR, str(e)))
-            span.record_exception(e)
-            raise
+        )
+        
+        # Create plan
+        plan_result = create_plan(state.model_dump())
+        
+        # Update state
+        updates = {
+            "plan": plan_result.get("plan", ""),
+            "messages": state.messages + [{
+                "role": "planner",
+                "content": plan_result.get("plan", ""),
+                "timestamp": datetime.utcnow().isoformat()
+            }]
+        }
+        
+        span.set_attribute("plan_length", len(updates["plan"]))
+        span.set_attribute("message_count", len(updates["messages"]))
+        span.add_event("plan_created", {"length": len(updates["plan"])})
+        span.set_status(Status(StatusCode.OK))
+        
+        logger.info(
+            f"[{user_id}][{thread_id}] PLANNER: Created plan with {len(updates['plan'])} characters",
+            extra={
+                "user_id": user_id,
+                "plan_length": len(updates["plan"]),
+                "output_updates": updates
+            }
+        )
+        
+        return updates
     
    
 # ============================================================================
@@ -140,61 +133,59 @@ def researcher_node(state: PostGeneratorState) -> Dict[str, Any]:
     thread_id = state.thread_id
     
     with tracer.start_as_current_span(
-        "researcher_node",
+        "researcher.retrieve_context",
         attributes={
-            "user_id": user_id,
+            "agent.name": "researcher",
+            "agent.user_id": user_id,
+            "agent.thread_id": thread_id,
+            "workflow.step": "research",
             "topic": topic,
             "has_plan": bool(plan),
         }
     ) as span:
-        try:
-            logger.info(
-                f"[{user_id}][{thread_id}] RESEARCHER: Retrieving context for topic '{topic}'",
-                extra={"user_id": user_id, "thread_id": thread_id, "topic": topic}
-            )
-            
-            # Perform research
-            research_result = research_topic(state.model_dump())
-            
-            # Update state
-            retrieved_docs = research_result.get("retrieved_docs", [])
-            context = research_result.get("context", "")
-            
-            updates = {
-                "context": context,
-                "retrieved_docs": retrieved_docs,
-                "messages": state.messages + [{
-                    "role": "researcher",
-                    "content": f"Retrieved {len(retrieved_docs)} documents",
-                    "timestamp": datetime.utcnow().isoformat()
-                }]
+        span.add_event("research_started", {"topic": topic})
+        
+        logger.info(
+            f"[{user_id}][{thread_id}] RESEARCHER: Retrieving context for topic '{topic}'",
+            extra={"user_id": user_id, "thread_id": thread_id, "topic": topic}
+        )
+        
+        # Perform research
+        research_result = research_topic(state.model_dump())
+        
+        # Update state
+        retrieved_docs = research_result.get("retrieved_docs", [])
+        context = research_result.get("context", "")
+        
+        updates = {
+            "context": context,
+            "retrieved_docs": retrieved_docs,
+            "messages": state.messages + [{
+                "role": "researcher",
+                "content": f"Retrieved {len(retrieved_docs)} documents",
+                "timestamp": datetime.utcnow().isoformat()
+            }]
+        }
+        
+        span.set_attribute("docs_retrieved", len(retrieved_docs))
+        span.set_attribute("context_length", len(context))
+        span.add_event("research_completed", {
+            "docs_count": len(retrieved_docs),
+            "context_length": len(context)
+        })
+        span.set_status(Status(StatusCode.OK))
+        
+        logger.info(
+            f"[{user_id}][{thread_id}] RESEARCHER: Retrieved {len(retrieved_docs)} documents, {len(context)} chars of context",
+            extra={
+                "user_id": user_id,
+                "thread_id": thread_id,
+                "docs_count": len(retrieved_docs),
+                "context_length": len(context)
             }
-            
-            span.set_attribute("docs_retrieved", len(retrieved_docs))
-            span.set_attribute("context_length", len(context))
-            span.set_status(Status(StatusCode.OK))
-            
-            logger.info(
-                f"[{user_id}][{thread_id}] RESEARCHER: Retrieved {len(retrieved_docs)} documents, {len(context)} chars of context",
-                extra={
-                    "user_id": user_id,
-                    "thread_id": thread_id,
-                    "docs_count": len(retrieved_docs),
-                    "context_length": len(context)
-                }
-            )
-            
-            return updates
-            
-        except Exception as e:
-            logger.error(
-                f"[{user_id}][{thread_id}] RESEARCHER: Error retrieving context: {e}",
-                extra={"user_id": user_id, "thread_id": thread_id, "error": str(e)},
-                exc_info=True
-            )
-            span.set_status(Status(StatusCode.ERROR, str(e)))
-            span.record_exception(e)
-            raise
+        )
+        
+        return updates
 
 
 # ============================================================================
@@ -222,74 +213,68 @@ def writer_node(state: PostGeneratorState) -> Dict[str, Any]:
     platform = state.platform
     refinement_count = state.refinement_count
     thread_id = state.thread_id
+    is_refinement = refinement_count > 0
     
     with tracer.start_as_current_span(
-        "writer_node",
+        f"writer.{'refine_post' if is_refinement else 'generate_post'}",
         attributes={
-            "user_id": user_id,
+            "agent.name": "writer",
+            "agent.user_id": user_id,
+            "agent.thread_id": thread_id,
+            "workflow.step": "write",
             "topic": topic,
             "platform": platform,
             "refinement_count": refinement_count,
+            "is_refinement": is_refinement,
         }
     ) as span:
-        try:
-            is_refinement = refinement_count > 0
-            action = "Refining" if is_refinement else "Writing"
-            
-            logger.info(
-                f"[{user_id}][{thread_id}] WRITER: {action} post for topic '{topic}' on {platform} (attempt {refinement_count + 1})",
-                extra={
-                    "user_id": user_id,
-                    "thread_id": thread_id,
-                    "topic": topic,
-                    "platform": platform,
-                    "refinement_count": refinement_count,
-                    "is_refinement": is_refinement
-                }
-            )
-            
-            # Import here to avoid circular dependencies
-            
-            # Generate post
-            write_result = write_post(state.model_dump())
-            
-            # Update state
-            draft = write_result.get("draft", "")
-            updates = {
-                "draft": draft,
-                "messages": state.messages + [{
-                    "role": "writer",
-                    "content": draft,
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "refinement": refinement_count
-                }]
+        action = "Refining" if is_refinement else "Writing"
+        span.add_event(f"writer_{'refining' if is_refinement else 'writing'}", {"attempt": refinement_count + 1})
+        
+        logger.info(
+            f"[{user_id}][{thread_id}] WRITER: {action} post for topic '{topic}' on {platform} (attempt {refinement_count + 1})",
+            extra={
+                "user_id": user_id,
+                "thread_id": thread_id,
+                "topic": topic,
+                "platform": platform,
+                "refinement_count": refinement_count,
+                "is_refinement": is_refinement
             }
-            
-            span.set_attribute("draft_length", len(draft))
-            span.set_attribute("is_refinement", is_refinement)
-            span.set_status(Status(StatusCode.OK))
-            
-            logger.info(
-                f"[{user_id}][{thread_id}] WRITER: Generated draft with {len(draft)} characters",
-                extra={
-                    "user_id": user_id,
-                    "thread_id": thread_id,
-                    "draft_length": len(draft),
-                    "refinement_count": refinement_count
-                }
-            )
-            
-            return updates
-            
-        except Exception as e:
-            logger.error(
-                f"[{user_id}][{thread_id}] WRITER: Error generating post: {e}",
-                extra={"user_id": user_id, "thread_id": thread_id, "error": str(e)},
-                exc_info=True
-            )
-            span.set_status(Status(StatusCode.ERROR, str(e)))
-            span.record_exception(e)
-            raise
+        )
+        
+        # Import here to avoid circular dependencies
+        
+        # Generate post
+        write_result = write_post(state.model_dump())
+        
+        # Update state
+        draft = write_result.get("draft", "")
+        updates = {
+            "draft": draft,
+            "messages": state.messages + [{
+                "role": "writer",
+                "content": draft,
+                "timestamp": datetime.utcnow().isoformat(),
+                "refinement": refinement_count
+            }]
+        }
+        
+        span.set_attribute("draft_length", len(draft))
+        span.add_event("draft_created", {"length": len(draft), "refinement": refinement_count})
+        span.set_status(Status(StatusCode.OK))
+        
+        logger.info(
+            f"[{user_id}][{thread_id}] WRITER: Generated draft with {len(draft)} characters",
+            extra={
+                "user_id": user_id,
+                "thread_id": thread_id,
+                "draft_length": len(draft),
+                "refinement_count": refinement_count
+            }
+        )
+        
+        return updates
 
 
 # ============================================================================
@@ -318,67 +303,66 @@ def reviewer_node(state: PostGeneratorState) -> Dict[str, Any]:
     thread_id = state.thread_id
     
     with tracer.start_as_current_span(
-        "reviewer_node",
+        "reviewer.evaluate_quality",
         attributes={
-            "user_id": user_id,
+            "agent.name": "reviewer",
+            "agent.user_id": user_id,
+            "agent.thread_id": thread_id,
+            "workflow.step": "review",
             "topic": topic,
             "draft_length": len(draft),
         }
     ) as span:
-        try:
-            logger.info(
-                f"[{user_id}][{thread_id}] REVIEWER: Evaluating post quality for topic '{topic}'",
-                extra={"user_id": user_id, "thread_id": thread_id, "topic": topic, "draft_length": len(draft)}
-            )
-            
-            # Review post
-            review_result = check_facts(state.model_dump())
-            
-            # Extract results
-            scores = review_result.get("scores", {})
-            feedback = review_result.get("feedback", "")
-            needs_refinement = review_result.get("needs_refinement", False)
-            
-            # Update state
-            updates = {
+        span.add_event("evaluation_started", {"draft_length": len(draft)})
+        
+        logger.info(
+            f"[{user_id}][{thread_id}] REVIEWER: Evaluating post quality for topic '{topic}'",
+            extra={"user_id": user_id, "thread_id": thread_id, "topic": topic, "draft_length": len(draft)}
+        )
+        
+        # Review post
+        review_result = check_facts(state.model_dump())
+        
+        # Extract results
+        scores = review_result.get("scores", {})
+        feedback = review_result.get("feedback", "")
+        needs_refinement = review_result.get("needs_refinement", False)
+        
+        # Update state
+        updates = {
+            "scores": scores,
+            "feedback": feedback,
+            "needs_refinement": needs_refinement,
+            "messages": state.messages + [{
+                "role": "reviewer",
+                "content": feedback,
                 "scores": scores,
-                "feedback": feedback,
-                "needs_refinement": needs_refinement,
-                "messages": state.messages + [{
-                    "role": "reviewer",
-                    "content": feedback,
-                    "scores": scores,
-                    "timestamp": datetime.utcnow().isoformat()
-                }]
+                "timestamp": datetime.utcnow().isoformat()
+            }]
+        }
+        
+        # Add evaluation scores as span attributes
+        for metric, value in scores.items():
+            span.set_attribute(f"score_{metric}", value)
+        span.set_attribute("needs_refinement", needs_refinement)
+        
+        span.add_event("evaluation_completed", {
+            "needs_refinement": needs_refinement,
+            "scores": scores
+        })
+        span.set_status(Status(StatusCode.OK))
+        
+        logger.info(
+            f"[{user_id}][{thread_id}] REVIEWER: Scores - {scores}, Needs refinement: {needs_refinement}",
+            extra={
+                "user_id": user_id,
+                "thread_id": thread_id,
+                "scores": scores,
+                "needs_refinement": needs_refinement
             }
-            
-            # Add telemetry
-            for metric, value in scores.items():
-                span.set_attribute(f"score_{metric}", value)
-            span.set_attribute("needs_refinement", needs_refinement)
-            span.set_status(Status(StatusCode.OK))
-            
-            logger.info(
-                f"[{user_id}][{thread_id}] REVIEWER: Scores - {scores}, Needs refinement: {needs_refinement}",
-                extra={
-                    "user_id": user_id,
-                    "thread_id": thread_id,
-                    "scores": scores,
-                    "needs_refinement": needs_refinement
-                }
-            )
-            
-            return updates
-            
-        except Exception as e:
-            logger.error(
-                f"[{user_id}][{thread_id}] REVIEWER: Error evaluating post: {e}",
-                extra={"user_id": user_id, "thread_id": thread_id, "error": str(e)},
-                exc_info=True
-            )
-            span.set_status(Status(StatusCode.ERROR, str(e)))
-            span.record_exception(e)
-            raise
+        )
+        
+        return updates
 
 
 # ============================================================================
@@ -408,79 +392,72 @@ def router_node(state: PostGeneratorState) -> Dict[str, Any]:
     thread_id = state.thread_id
     
     with tracer.start_as_current_span(
-        "router_node",
+        "router.route_decision",
         attributes={
-            "user_id": user_id,
+            "agent.name": "router",
+            "agent.user_id": user_id,
+            "agent.thread_id": thread_id,
+            "workflow.step": "route",
             "needs_refinement": needs_refinement,
             "refinement_count": refinement_count,
             "max_refinements": max_refinements,
         }
     ) as span:
-        try:
+        logger.info(
+            f"[{user_id}][{thread_id}] ROUTER: Making routing decision for topic '{topic}'",
+            extra={
+                "user_id": user_id,
+                "thread_id": thread_id,
+                "topic": topic,
+                "needs_refinement": needs_refinement,
+                "refinement_count": refinement_count,
+                "max_refinements": max_refinements
+            }
+        )
+        
+        updates = {}
+        
+        if not needs_refinement:
+            # Quality is acceptable
+            updates["final_post"] = state.draft
+            decision = "finalize"
             logger.info(
-                f"[{user_id}][{thread_id}] ROUTER: Making routing decision for topic '{topic}'",
+                f"[{user_id}][{thread_id}] ROUTER: Quality acceptable, finalizing post",
+                extra={"user_id": user_id, "thread_id": thread_id, "decision": decision}
+            )
+        elif refinement_count >= max_refinements:
+            # Max refinements reached
+            updates["final_post"] = state.draft
+            updates["needs_refinement"] = False
+            decision = "finalize (max refinements)"
+            logger.warning(
+                f"[{user_id}][{thread_id}] ROUTER: Max refinements ({max_refinements}) reached, finalizing anyway",
                 extra={
                     "user_id": user_id,
                     "thread_id": thread_id,
-                    "topic": topic,
-                    "needs_refinement": needs_refinement,
-                    "refinement_count": refinement_count,
-                    "max_refinements": max_refinements
+                    "decision": decision,
+                    "refinement_count": refinement_count
                 }
             )
-            
-            updates = {}
-            
-            if not needs_refinement:
-                # Quality is acceptable
-                updates["final_post"] = state.draft
-                decision = "finalize"
-                logger.info(
-                    f"[{user_id}][{thread_id}] ROUTER: Quality acceptable, finalizing post",
-                    extra={"user_id": user_id, "thread_id": thread_id, "decision": decision}
-                )
-            elif refinement_count >= max_refinements:
-                # Max refinements reached
-                updates["final_post"] = state.draft
-                updates["needs_refinement"] = False
-                decision = "finalize (max refinements)"
-                logger.warning(
-                    f"[{user_id}][{thread_id}] ROUTER: Max refinements ({max_refinements}) reached, finalizing anyway",
-                    extra={
-                        "user_id": user_id,
-                        "thread_id": thread_id,
-                        "decision": decision,
-                        "refinement_count": refinement_count
-                    }
-                )
-            else:
-                # Needs refinement
-                updates["refinement_count"] = refinement_count + 1
-                decision = f"refine (attempt {refinement_count + 2})"
-                logger.info(
-                    f"[{user_id}][{thread_id}] ROUTER: Sending back for refinement (attempt {refinement_count + 2}/{max_refinements})",
-                    extra={
-                        "user_id": user_id,
-                        "thread_id": thread_id,
-                        "decision": decision,
-                        "next_refinement": refinement_count + 1
-                    }
-                )
-            
-            span.set_attribute("decision", decision)
-            span.set_status(Status(StatusCode.OK))
-            
-            return updates
-            
-        except Exception as e:
-            logger.error(
-                f"[{user_id}][{thread_id}] ROUTER: Error making routing decision: {e}",
-                extra={"user_id": user_id, "thread_id": thread_id, "error": str(e)},
-                exc_info=True
+        else:
+            # Needs refinement
+            updates["refinement_count"] = refinement_count + 1
+            decision = f"refine (attempt {refinement_count + 2})"
+            logger.info(
+                f"[{user_id}][{thread_id}] ROUTER: Sending back for refinement (attempt {refinement_count + 2}/{max_refinements})",
+                extra={
+                    "user_id": user_id,
+                    "thread_id": thread_id,
+                    "decision": decision,
+                    "next_refinement": refinement_count + 1
+                }
             )
-            span.set_status(Status(StatusCode.ERROR, str(e)))
-            span.record_exception(e)
-            raise
+        
+        span.set_attribute("decision", decision)
+        span.add_event("routing_decision", {"decision": decision})
+        span.set_status(Status(StatusCode.OK))
+        
+        return updates
 
 
 # ============================================================================

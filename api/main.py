@@ -16,17 +16,27 @@ from contextlib import asynccontextmanager
 from typing import Dict, AsyncGenerator
 
 from dotenv import load_dotenv
+
+# Load environment variables FIRST
+load_dotenv()
+
+# Configure Azure Monitor BEFORE any other imports (critical for tracing)
+from azure.monitor.opentelemetry import configure_azure_monitor
+configure_azure_monitor(
+    connection_string="InstrumentationKey=56d1abd5-93d6-4d79-9ba5-b32a09720b5f;IngestionEndpoint=https://eastus2-3.in.applicationinsights.azure.com/;LiveEndpoint=https://eastus2.livediagnostics.monitor.azure.com/;ApplicationId=79def9ed-d37c-4102-83cb-72c57d512f09"
+)
+
+# Instrument OpenAI BEFORE importing modules that use OpenAI clients
+from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor
+OpenAIInstrumentor().instrument()
+
+# Now import FastAPI and other dependencies
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from sse_starlette.sse import EventSourceResponse
-from azure.ai.projects import AIProjectClient
-from azure.identity import DefaultAzureCredential
-from azure.monitor.opentelemetry import configure_azure_monitor
-from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry import trace
-
 from azure.core.settings import settings
 import uvicorn
 
@@ -37,10 +47,8 @@ from api.schemas import (
     ErrorResponse,
 )
 
+# Import workflows AFTER OpenAI instrumentation is configured
 from workflows import run_post_generator
-
-# Load environment variables
-load_dotenv()
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -51,30 +59,7 @@ logging.getLogger("azure.monitor.opentelemetry.exporter.export._base").setLevel(
 
 # Initialize tracer
 tracer = trace.get_tracer(__name__)
-# settings.tracing_implementation = "opentelemetry"
-
-# Initialize telemetry only once (prevents TracerProvider override errors during reload)
-_telemetry_initialized = False
-
-def initialize_telemetry():
-    """Initialize Azure Monitor telemetry and OpenTelemetry instrumentations."""
-    global _telemetry_initialized
-    if _telemetry_initialized:
-        logger.info("Telemetry already initialized, skipping")
-        return
-    
-    try:
-        project_client = AIProjectClient(
-            credential=DefaultAzureCredential(), 
-            endpoint=os.getenv("AZURE_FOUNDRY_PROJECT_URL")
-        )
-        connection_string = project_client.telemetry.get_application_insights_connection_string()
-        configure_azure_monitor(connection_string=connection_string)
-        OpenAIInstrumentor().instrument()
-        _telemetry_initialized = True
-        logger.info("Telemetry configured successfully")
-    except Exception as e:
-        logger.error(f"Failed to configure telemetry: {e}", exc_info=True)
+settings.tracing_implementation = "opentelemetry"
 
 # Create FastAPI app
 app = FastAPI(
@@ -82,6 +67,9 @@ app = FastAPI(
     description="Multi-agent system for generating platform specific posts using LLMs, KBs, and tools.",
     version="0.1.0",
 )
+
+# Instrument FastAPI (must be done after app creation)
+FastAPIInstrumentor.instrument_app(app)
 
 # Add CORS middleware (configure for production)
 app.add_middleware(
@@ -91,14 +79,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Initialize telemetry on startup
-@app.on_event("startup")
-async def startup_event():
-    """Initialize telemetry when the app starts."""
-    initialize_telemetry()
-    # Instrument FastAPI after app is created
-    FastAPIInstrumentor.instrument_app(app)
 
 # Exception handler for HTTPException
 @app.exception_handler(HTTPException)
@@ -171,10 +151,18 @@ async def generate_post(request: ChatRequest):
         "generate_post_api",
         attributes={
             "user_id": request.user_id,
+            "api.endpoint": "/chat",
+            "api.method": "POST",
             "query": request.query,
+            "query_length": len(request.query),
         }
     ) as span:
         try:
+            span.add_event("request_received", {
+                "user_id": request.user_id,
+                "query_length": len(request.query)
+            })
+            
             logger.info(f"[{request.user_id}] API: Received post generation request for query: {request.query}")
 
             # Run the workflow
@@ -185,6 +173,13 @@ async def generate_post(request: ChatRequest):
             
             span.set_attribute("success", True)
             span.set_attribute("trace_id", result.get("trace_id", ""))
+            span.set_attribute("post_length", len(result.get("post", "")))
+            span.set_attribute("platform", result.get("platform", "unknown"))
+            
+            span.add_event("post_generated", {
+                "post_length": len(result.get("post", "")),
+                "trace_id": result.get("trace_id", "")
+            })
             
             
             logger.info(f"[{request.user_id}] API: Post generation completed successfully")

@@ -13,6 +13,7 @@ from azure.core.credentials import AzureKeyCredential
 from azure.search.documents import SearchClient
 from langchain_core.runnables import RunnableConfig
 from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
 from core.logging_config import get_logger
 
 tracer = trace.get_tracer(__name__)
@@ -39,7 +40,6 @@ class ResearcherAgent:
             credential=AzureKeyCredential(self.search_key)
         )
     
-    @tracer.start_as_current_span("ResearcherAgent.search_context")
     def search_context(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         """
         Search Azure AI Search for relevant context.
@@ -51,28 +51,45 @@ class ResearcherAgent:
         Returns:
             List of search results with content and scores
         """
-        try:
-            results = self.search_client.search(
-                search_text=query,
-                top=top_k,
-                select=["content", "title", "source", "chunk_id"]
-            )
-            
-            docs = []
-            for result in results:
-                docs.append({
-                    "content": result.get("content", ""),
-                    "title": result.get("title", ""),
-                    "source": result.get("source", ""),
-                    "score": result.get("@search.score", 0.0)
-                })
-            
-            return docs
-            
-        except Exception as e:
-            print(f"⚠️  Warning: Azure AI Search failed: {e}")
-            logger.error(f"Azure AI Search failed: {e}", exc_info=True)
-            return []
+        tracer = trace.get_tracer(__name__)
+        with tracer.start_as_current_span(
+            "search.query",
+            attributes={
+                "search.query": query[:500],
+                "search.index": self.search_index,
+                "top_k": top_k
+            }
+        ) as span:
+            try:
+                results = self.search_client.search(
+                    search_text=query,
+                    top=top_k,
+                    select=["content", "title", "source", "chunk_id"]
+                )
+                
+                docs = []
+                for result in results:
+                    docs.append({
+                        "content": result.get("content", ""),
+                        "title": result.get("title", ""),
+                        "source": result.get("source", ""),
+                        "score": result.get("@search.score", 0.0)
+                    })
+                
+                span.set_attribute("search.results_count", len(docs))
+                if docs:
+                    span.set_attribute("search.top_score", docs[0]["score"])
+                    span.set_attribute("search.avg_score", sum(d["score"] for d in docs) / len(docs))
+                
+                span.set_status(Status(StatusCode.OK))
+                return docs
+                
+            except Exception as e:
+                span.set_status(Status(StatusCode.ERROR, str(e)))
+                span.record_exception(e)
+                print(f"⚠️  Warning: Azure AI Search failed: {e}")
+                logger.error(f"Azure AI Search failed: {e}", exc_info=True)
+                return []
     
     def format_context(self, docs: List[Dict[str, Any]]) -> str:
         """

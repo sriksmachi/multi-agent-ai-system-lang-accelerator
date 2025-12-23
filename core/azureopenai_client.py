@@ -30,6 +30,7 @@ logging.basicConfig(
 )
  
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
  
 @dataclass
 class AzureOpenAIConfig:
@@ -122,15 +123,19 @@ class AzureOpenAIClient:
             logger.error(f"Azure OpenAI connection test failed, {e}")
  
     def generate_chat_completion(self, prompt, system_prompt="You are a helpful assistant.", max_tokens=None):
-        """Generate chat completion using Azure OpenAI."""
-        tracer = trace.get_tracer(__name__)
+        """Generate chat completion using Azure OpenAI with OpenTelemetry GenAI semantic conventions."""
         
         with tracer.start_as_current_span(
-            "AzureOpenAIClient.generate_chat_completion",
+            "gen_ai.client.operation",
             attributes={
-                "llm.model": self.deployment_name,
-                "llm.temperature": self.config.temperature,
-                "llm.max_tokens": max_tokens or self.config.max_tokens,
+                "gen_ai.system": "azure_openai",
+                "gen_ai.request.model": self.deployment_name,
+                "gen_ai.request.temperature": self.config.temperature,
+                "gen_ai.request.max_tokens": max_tokens or self.config.max_tokens,
+                "gen_ai.request.top_p": self.config.top_p,
+                "gen_ai.request.frequency_penalty": self.config.frequency_penalty,
+                "gen_ai.request.presence_penalty": self.config.presence_penalty,
+                "gen_ai.operation.name": "chat",
             }
         ) as span:
             # Build completion parameters
@@ -147,20 +152,45 @@ class AzureOpenAIClient:
             if max_tokens:
                 completion_params["max_completion_tokens"] = max_tokens
             
+            # Add prompt preview to span (truncated for large prompts)
+            prompt_preview = prompt[:500] if len(prompt) > 500 else prompt
+            span.set_attribute("gen_ai.prompt.preview", prompt_preview)
+            span.set_attribute("gen_ai.prompt.length", len(prompt))
+            span.set_attribute("gen_ai.system_prompt.length", len(system_prompt))
+            
             try:
                 response = self._client.chat.completions.create(**completion_params)
                 content = response.choices[0].message.content
                 
-                # Add response metadata to span
-                span.set_attribute("llm.response_tokens", response.usage.completion_tokens if hasattr(response, 'usage') else 0)
-                span.set_attribute("llm.prompt_tokens", response.usage.prompt_tokens if hasattr(response, 'usage') else 0)
-                span.set_attribute("llm.total_tokens", response.usage.total_tokens if hasattr(response, 'usage') else 0)
+                # Add GenAI semantic convention attributes
+                if hasattr(response, 'usage') and response.usage:
+                    span.set_attribute("gen_ai.usage.input_tokens", response.usage.prompt_tokens)
+                    span.set_attribute("gen_ai.usage.output_tokens", response.usage.completion_tokens)
+                    # Total tokens is not in GenAI spec but useful for monitoring
+                    span.set_attribute("gen_ai.usage.total_tokens", response.usage.total_tokens)
+                
+                # Response metadata
+                if hasattr(response, 'model'):
+                    span.set_attribute("gen_ai.response.model", response.model)
+                
+                if hasattr(response, 'id'):
+                    span.set_attribute("gen_ai.response.id", response.id)
+                
+                if response.choices and hasattr(response.choices[0], 'finish_reason'):
+                    span.set_attribute("gen_ai.response.finish_reasons", [response.choices[0].finish_reason])
+                
+                # Add response preview
+                response_preview = content[:500] if len(content) > 500 else content
+                span.set_attribute("gen_ai.completion.preview", response_preview)
+                span.set_attribute("gen_ai.completion.length", len(content))
+                
                 span.set_status(Status(StatusCode.OK))
                 
                 return content
             except Exception as e:
                 span.set_status(Status(StatusCode.ERROR, str(e)))
                 span.record_exception(e)
+                logger.error(f"Azure OpenAI completion failed: {e}", exc_info=True)
                 raise
 
 

@@ -1,0 +1,34 @@
+Review this {platform} post for quality and accuracy.
+
+ORIGINAL TOPIC: {topic}
+PLATFORM: {platform}
+TARGET TONE: {tone}
+
+PLAN/OUTLINE:
+{plan}
+
+SOURCE CONTEXT:
+{context}
+
+DRAFT POST:
+{draft}
+
+Evaluate the post on these criteria:
+1. Factual Accuracy (0-5): Does it align with the source context?
+2. Relevance (0-5): Does it address the topic comprehensively?
+3. Engagement (0-5): Is it compelling and valuable?
+4. Platform Compliance (0-5): Does it follow {platform} best practices?
+5. Tone (0-5): Is the tone appropriate?
+
+Provide your evaluation in this format:
+SCORES:
+- factual_accuracy: [score]
+- relevance: [score]
+- engagement: [score]
+- platform_compliance: [score]
+- tone: [score]
+
+OVERALL ASSESSMENT: [Pass/Needs Refinement]
+
+FEEDBACK:
+[Provide specific, actionable feedback if improvements are needed. If the post is excellent, explain what makes it effective.]

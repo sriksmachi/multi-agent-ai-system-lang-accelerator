@@ -1,0 +1,23 @@
+Write a {platform} post based on this outline and context.
+
+TOPIC: {topic}
+PLATFORM: {platform}
+TONE: {tone}
+
+OUTLINE:
+{plan}
+
+CONTEXT/RESEARCH:
+{context}
+
+{feedback}
+
+Instructions:
+1. Follow the outline structure but make it flow naturally
+2. Write in {tone} tone appropriate for {platform}
+3. Use the research context to add credibility and depth
+4. Make it engaging and actionable
+5. Include appropriate formatting (line breaks, emojis if suitable)
+6. Add relevant hashtags if appropriate for the platform
+
+Write the complete post now:

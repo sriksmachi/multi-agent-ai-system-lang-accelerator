@@ -158,9 +158,14 @@ async def generate_post(request: ChatRequest):
         }
     ) as span:
         try:
-            span.add_event("request_received", {
+            # Add thread tracking for conversation context
+            thread_id = f"thread_{request.user_id}_{datetime.now().strftime('%Y%m%d')}"
+            span.set_attribute("gen_ai.thread.id", thread_id)
+            
+            span.add_event("gen_ai.request.received", {
                 "user_id": request.user_id,
-                "query_length": len(request.query)
+                "query_length": len(request.query),
+                "gen_ai.thread.id": thread_id
             })
             
             logger.info(f"[{request.user_id}] API: Received post generation request for query: {request.query}")
@@ -168,7 +173,8 @@ async def generate_post(request: ChatRequest):
             # Run the workflow
             result = run_post_generator(
                 user_id=request.user_id,
-                topic=request.query
+                topic=request.query,
+                thread_id=thread_id
             )
             
             span.set_attribute("success", True)
@@ -176,9 +182,10 @@ async def generate_post(request: ChatRequest):
             span.set_attribute("post_length", len(result.get("post", "")))
             span.set_attribute("platform", result.get("platform", "unknown"))
             
-            span.add_event("post_generated", {
+            span.add_event("gen_ai.response.completed", {
                 "post_length": len(result.get("post", "")),
-                "trace_id": result.get("trace_id", "")
+                "trace_id": result.get("trace_id", ""),
+                "gen_ai.event.content": json.dumps({"post": result.get("post", "")})
             })
             
             

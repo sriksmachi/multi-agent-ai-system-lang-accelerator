@@ -9,6 +9,7 @@ Implements the Planner → Researcher → Writer → Reviewer pattern with:
 """
 
 import os
+import json
 from typing import Literal, Dict, Any
 from datetime import datetime
 
@@ -66,7 +67,7 @@ def planner_node(state: PostGeneratorState) -> Dict[str, Any]:
             "platform": platform,
         }
     ) as span:
-        span.add_event("planner_started", {"topic": topic})
+        span.add_event("gen_ai.planner.started", {"topic": topic})
         
         logger.info(
             f"[{user_id}][{thread_id}] PLANNER: Creating outline for topic '{topic}' on {platform}",
@@ -94,7 +95,10 @@ def planner_node(state: PostGeneratorState) -> Dict[str, Any]:
         
         span.set_attribute("plan_length", len(updates["plan"]))
         span.set_attribute("message_count", len(updates["messages"]))
-        span.add_event("plan_created", {"length": len(updates["plan"])})
+        span.add_event("gen_ai.planner.completed", {
+            "plan_length": len(updates["plan"]),
+            "gen_ai.event.content": json.dumps({"plan": updates["plan"]})
+        })
         span.set_status(Status(StatusCode.OK))
         
         logger.info(
@@ -143,7 +147,7 @@ def researcher_node(state: PostGeneratorState) -> Dict[str, Any]:
             "has_plan": bool(plan),
         }
     ) as span:
-        span.add_event("research_started", {"topic": topic})
+        span.add_event("gen_ai.researcher.started", {"topic": topic})
         
         logger.info(
             f"[{user_id}][{thread_id}] RESEARCHER: Retrieving context for topic '{topic}'",
@@ -229,7 +233,7 @@ def writer_node(state: PostGeneratorState) -> Dict[str, Any]:
         }
     ) as span:
         action = "Refining" if is_refinement else "Writing"
-        span.add_event(f"writer_{'refining' if is_refinement else 'writing'}", {"attempt": refinement_count + 1})
+        span.add_event(f"gen_ai.writer.{'refining' if is_refinement else 'writing'}", {"attempt": refinement_count + 1})
         
         logger.info(
             f"[{user_id}][{thread_id}] WRITER: {action} post for topic '{topic}' on {platform} (attempt {refinement_count + 1})",
@@ -261,7 +265,11 @@ def writer_node(state: PostGeneratorState) -> Dict[str, Any]:
         }
         
         span.set_attribute("draft_length", len(draft))
-        span.add_event("draft_created", {"length": len(draft), "refinement": refinement_count})
+        span.add_event("gen_ai.writer.completed", {
+            "draft_length": len(draft),
+            "refinement_count": refinement_count,
+            "gen_ai.event.content": json.dumps({"draft": draft})
+        })
         span.set_status(Status(StatusCode.OK))
         
         logger.info(
@@ -313,7 +321,7 @@ def reviewer_node(state: PostGeneratorState) -> Dict[str, Any]:
             "draft_length": len(draft),
         }
     ) as span:
-        span.add_event("evaluation_started", {"draft_length": len(draft)})
+        span.add_event("gen_ai.reviewer.started", {"draft_length": len(draft)})
         
         logger.info(
             f"[{user_id}][{thread_id}] REVIEWER: Evaluating post quality for topic '{topic}'",
@@ -346,9 +354,28 @@ def reviewer_node(state: PostGeneratorState) -> Dict[str, Any]:
             span.set_attribute(f"score_{metric}", value)
         span.set_attribute("needs_refinement", needs_refinement)
         
-        span.add_event("evaluation_completed", {
+        # Log evaluation events with gen_ai.evaluation pattern
+        # Get response_id from span context
+        current_span = trace.get_current_span()
+        response_id = str(current_span.get_span_context().span_id) if current_span else ""
+        
+        span.set_attribute("gen_ai.response.id", response_id)
+        
+        # Log individual metric evaluations
+        for metric, score in scores.items():
+            span.add_event(f"gen_ai.evaluation.{metric}", {
+                "gen_ai.evaluator.name": metric,
+                "gen_ai.evaluation.score": float(score),
+                "gen_ai.response.id": response_id,
+                "gen_ai.event.content": json.dumps({"comments": f"{metric} evaluation", "passed": score >= 7})
+            })
+        
+        # Log overall evaluation result
+        avg_score = sum(scores.values()) / len(scores) if scores else 0
+        span.add_event("gen_ai.reviewer.completed", {
             "needs_refinement": needs_refinement,
-            "scores": scores
+            "avg_score": avg_score,
+            "gen_ai.event.content": json.dumps({"feedback": feedback, "scores": scores})
         })
         span.set_status(Status(StatusCode.OK))
         
@@ -454,7 +481,7 @@ def router_node(state: PostGeneratorState) -> Dict[str, Any]:
             )
         
         span.set_attribute("decision", decision)
-        span.add_event("routing_decision", {"decision": decision})
+        span.add_event("gen_ai.router.decision", {"decision": decision})
         span.set_status(Status(StatusCode.OK))
         
         return updates

@@ -1,4 +1,5 @@
 import os
+import json
 import traceback
 import logging
 import time
@@ -152,6 +153,16 @@ class AzureOpenAIClient:
             if max_tokens:
                 completion_params["max_completion_tokens"] = max_tokens
             
+            # Log system message event with structured content
+            span.add_event("gen_ai.system.message", {
+                "gen_ai.event.content": json.dumps({"content": system_prompt})
+            })
+            
+            # Log user message event with structured content
+            span.add_event("gen_ai.user.message", {
+                "gen_ai.event.content": json.dumps({"content": prompt})
+            })
+            
             # Add prompt preview to span (truncated for large prompts)
             prompt_preview = prompt[:500] if len(prompt) > 500 else prompt
             span.set_attribute("gen_ai.prompt.preview", prompt_preview)
@@ -183,6 +194,11 @@ class AzureOpenAIClient:
                 response_preview = content[:500] if len(content) > 500 else content
                 span.set_attribute("gen_ai.completion.preview", response_preview)
                 span.set_attribute("gen_ai.completion.length", len(content))
+                
+                # Log assistant completion as gen_ai.choice event with structured content
+                span.add_event("gen_ai.choice", {
+                    "gen_ai.event.content": json.dumps({"content": content})
+                })
                 
                 span.set_status(Status(StatusCode.OK))
                 

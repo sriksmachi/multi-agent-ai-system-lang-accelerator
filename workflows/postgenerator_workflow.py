@@ -574,8 +574,8 @@ def run_post_generator(
     tone: str = None,
     max_refinements: int = None,
     thread_id: str = None,
-    
-) -> Dict[str, Any]:
+    stream: bool = False
+):
     """
     Execute the post generator workflow.
     
@@ -651,8 +651,45 @@ def run_post_generator(
                 max_refinements=max_refinements or int(os.getenv("MAX_REFINEMENT_LOOPS", "2"))
             )
             
-            # Execute workflow with checkpoint config
-            result = compiled_workflow.invoke(initial_state.model_dump(), config=config)
+            # Execute workflow (streaming or non-streaming)
+            if stream:
+                # Streaming mode: return async generator
+                async def stream_generator():
+                    """Async generator for streaming workflow updates."""
+                    final_state = None
+                    for chunk in compiled_workflow.stream(initial_state.model_dump(), config=config, stream_mode="updates"):
+                        # Store final state for metadata
+                        if chunk:
+                            final_state = chunk
+                        
+                        # Extract content from chunk for streaming
+                        if isinstance(chunk, dict):
+                            for node_name, node_output in chunk.items():
+                                if isinstance(node_output, dict):
+                                    # Stream writer agent output if available
+                                    if "draft_post" in node_output:
+                                        yield f"data: {json.dumps({'content': node_output['draft_post'], 'node': node_name})}\n\n"
+                                    elif "final_post" in node_output:
+                                        yield f"data: {json.dumps({'content': node_output['final_post'], 'node': node_name})}\n\n"
+                    
+                    # Send final metadata
+                    if final_state:
+                        trace_id = format(span.get_span_context().trace_id, '032x')
+                        metadata = {
+                            "metadata": {
+                                "trace_id": trace_id,
+                                "conversation_id": conversation_id,
+                                "platform": platform,
+                                "scores": final_state.get("scores", {}),
+                                "refinement_count": final_state.get("refinement_count", 0),
+                            }
+                        }
+                        yield f"data: {json.dumps(metadata)}\n\n"
+                
+                return stream_generator()
+            else:
+                # Non-streaming mode: return complete result
+                result = compiled_workflow.invoke(initial_state.model_dump(), config=config)
             
             # Extract final results
             final_post = result.get("final_post", "")
@@ -687,17 +724,6 @@ def run_post_generator(
                     "trace_id": trace_id
                 }
             )
-            
-            # Print final post to console
-            print("\n" + "="*80)
-            print("✅ FINAL POST GENERATED")
-            print("="*80)
-            print(f"\n{final_post}\n")
-            print("="*80)
-            print(f"📊 Quality Scores: {scores}")
-            print(f"🔄 Refinements: {refinement_count}")
-            print(f"🔗 Trace ID: {trace_id}")
-            print("="*80 + "\n")
             
             return output
             

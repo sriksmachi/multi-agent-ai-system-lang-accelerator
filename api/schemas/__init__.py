@@ -27,3 +27,31 @@ class ErrorResponse(BaseModel):
     error: str = Field(..., description="Error type or code")
     message: str = Field(..., description="Detailed error message")
     detail: Optional[str] = Field(None, description="Additional error details")
+
+
+# Import MCP schemas
+from .mcp_schemas import (
+    MCPToolParameter,
+    MCPTool,
+    MCPToolsListResponse,
+    MCPMessage,
+    MCPToolCallRequest,
+    MCPToolCallResponse,
+    MCPStreamChunk,
+    MCPErrorResponse,
+)
+
+__all__ = [
+    "HealthResponse",
+    "ChatRequest",
+    "GeneratePostResponse",
+    "ErrorResponse",
+    "MCPToolParameter",
+    "MCPTool",
+    "MCPToolsListResponse",
+    "MCPMessage",
+    "MCPToolCallRequest",
+    "MCPToolCallResponse",
+    "MCPStreamChunk",
+    "MCPErrorResponse",
+]

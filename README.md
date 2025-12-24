@@ -1,4 +1,5 @@
 # multi-agent-ai-system-lang-accelerator
+
 A solution accelerator for building scalable, observable, reliable Multi-Agent systems.
 
 ## PDF Data Pipeline
@@ -12,7 +13,7 @@ This project includes a data pipeline for processing PDFs and uploading them to 
 - **Embed**: Generate embeddings using Azure OpenAI (text-embedding-3-small)
 - **Upload**: Merge-or-upload strategy to Azure AI Search (idempotent re-ingestion)
 
-### Prerequisites
+## Prerequisites
 
 1. **Azure Services Required**:
    - Azure Document Intelligence (for PDF parsing)

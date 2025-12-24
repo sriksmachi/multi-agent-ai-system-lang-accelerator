@@ -23,7 +23,7 @@ load_dotenv()
 # Configure Azure Monitor BEFORE any other imports (critical for tracing)
 from azure.monitor.opentelemetry import configure_azure_monitor
 configure_azure_monitor(
-    connection_string="InstrumentationKey=56d1abd5-93d6-4d79-9ba5-b32a09720b5f;IngestionEndpoint=https://eastus2-3.in.applicationinsights.azure.com/;LiveEndpoint=https://eastus2.livediagnostics.monitor.azure.com/;ApplicationId=79def9ed-d37c-4102-83cb-72c57d512f09"
+    connection_string=os.getenv("APPINSIGHTS_CONNECTION_STRING", "")
 )
 
 # Instrument OpenAI BEFORE importing modules that use OpenAI clients
@@ -79,6 +79,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include MCP routes
+from api.routes.mcp_routes import router as mcp_router
+app.include_router(mcp_router)
 
 # Exception handler for HTTPException
 @app.exception_handler(HTTPException)
@@ -210,6 +214,73 @@ async def generate_post(request: ChatRequest):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Post generation failed: {str(e)}",
             )
+            
+            
+# streaming API endpoint 
+@app.post(
+    "/chat/stream",
+    response_model=GeneratePostResponse,
+    summary="Streaming Chat Endpoint",
+    description="Generate social media post based on user input with streaming response.",
+)
+async def generate_post_stream(request: ChatRequest):
+    """
+    Generate a social media post with streaming response.
+    
+    Args:
+        request: ChatRequest with user_id and query
+        
+    Returns:
+        StreamingResponse with post chunks
+        
+    Raises:
+        HTTPException: If generation fails
+    """
+    async def event_generator():
+        with tracer.start_as_current_span(
+            "generate_post_stream_api",
+            attributes={
+                "user_id": request.user_id,
+                "api.endpoint": "/chat/stream",
+                "api.method": "POST",
+                "query": request.query,
+                "query_length": len(request.query),
+            }
+        ) as span:
+            try:
+                thread_id = f"thread_{request.user_id}_{datetime.now().strftime('%Y%m%d')}"
+                span.set_attribute("gen_ai.thread.id", thread_id)
+                
+                span.add_event("gen_ai.request.received", {
+                    "user_id": request.user_id,
+                    "query_length": len(request.query),
+                    "gen_ai.thread.id": thread_id
+                })
+                
+                logger.info(f"[{request.user_id}] API: Received streaming post generation request for query: {request.query}")
+
+                # Run the workflow in streaming mode
+                async for chunk in run_post_generator(
+                    user_id=request.user_id,
+                    topic=request.query,
+                    thread_id=thread_id,
+                    stream=True
+                ):
+                    yield chunk
+                
+                span.set_attribute("success", True)
+                logger.info(f"[{request.user_id}] API: Streaming post generation completed successfully")
+                
+            except Exception as e:
+                span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
+                span.record_exception(e)
+                logger.error(f"[{request.user_id}] API: Error generating streaming post: {e}", exc_info=True)
+                yield f"data: {{\"error\": \"Post generation failed: {str(e)}\"}}\n\n"
+    
+    return EventSourceResponse(event_generator())
+
+
+
 
 if __name__ == "__main__":
 

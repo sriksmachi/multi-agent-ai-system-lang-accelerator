@@ -21,6 +21,7 @@ class GeneratePostResponse(BaseModel):
     refinement_count: int = Field(default=0, description="Number of refinement iterations")
     trace_id: str = Field(..., description="OpenTelemetry trace ID for debugging")
     conversation_id: str = Field(..., description="Conversation identifier")
+    feedback: Optional[str] = Field(None, description="Reviewer feedback on the generated post")
     
 class ErrorResponse(BaseModel):
     """Standard error response schema."""

@@ -14,7 +14,6 @@ from langchain_core.runnables import RunnableConfig
 from opentelemetry import trace
 from core.azureopenai_client import AzureOpenAIClient
 from core.logging_config import get_logger
-from azure.ai.evaluation import evaluate, RelevanceEvaluator, ViolenceEvaluator, BleuScoreEvaluator
 
 tracer = trace.get_tracer(__name__)
 logger = get_logger(__name__)

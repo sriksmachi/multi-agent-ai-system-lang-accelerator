@@ -667,10 +667,12 @@ def run_post_generator(
                             for node_name, node_output in chunk.items():
                                 if isinstance(node_output, dict):
                                     # Stream writer agent output if available
-                                    if "draft_post" in node_output:
-                                        yield f"data: {json.dumps({'content': node_output['draft_post'], 'node': node_name})}\n\n"
+                                    if "draft" in node_output:
+                                        yield f"data: {json.dumps({'content': node_output['draft'], 'node': node_name})}\n\n"
                                     elif "final_post" in node_output:
                                         yield f"data: {json.dumps({'content': node_output['final_post'], 'node': node_name})}\n\n"
+                                    elif "plan" in node_output:
+                                        yield f"data: {json.dumps({'content': node_output['plan'], 'node': node_name})}\n\n"
                     
                     # Send final metadata
                     if final_state:
@@ -706,6 +708,7 @@ def run_post_generator(
                 "trace_id": trace_id,
                 "conversation_id": conversation_id,
                 "platform": platform,
+                "feedback": result.get("feedback", "")
             }
             
             span.set_attribute("success", True)

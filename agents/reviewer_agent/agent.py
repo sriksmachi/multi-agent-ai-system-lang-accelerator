@@ -69,7 +69,7 @@ class ReviewerAgent:
             # Configure deepeval with Azure OpenAI
             os.environ["OPENAI_API_TYPE"] = "azure"
             os.environ["OPENAI_API_VERSION"] = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
-            deepeval_model_name = os.getenv("DEEPEVAL_MODEL", "o4-mini")
+            deepeval_model_name = os.getenv("DEEPEVAL_MODEL", "grok-4-fast-reasoning") # Typically a model different from the LLM used for generation
             deepeval_model = AzureOpenAIModel(
                         deployment_name=deepeval_model_name,
                         temperature=1

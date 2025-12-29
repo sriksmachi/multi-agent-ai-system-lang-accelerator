@@ -208,11 +208,6 @@ async def main():
     print()
     
     try:
-        # Example 1: List tools
-        await example_list_tools()
-        
-        # Example 2: Non-streaming invocation
-        await example_non_streaming()
         
         # Example 3: Streaming invocation
         await example_streaming()

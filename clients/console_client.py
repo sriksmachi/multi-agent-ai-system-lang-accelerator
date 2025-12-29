@@ -16,7 +16,7 @@ def chat(query: str):
         response = requests.post(
             f"{API_URL}/chat",
             json={"user_id": user_id, "query": query},
-            timeout=120
+            timeout=180
         )
         
         if response.status_code == 200:
@@ -36,6 +36,8 @@ def chat(query: str):
                 print(f"🔄 Refinements: {result['refinement_count']}")
             if 'trace_id' in result:
                 print(f"🔗 Trace ID: {result['trace_id']}")
+            if 'feedback' in result:
+                print(f"💬 Reviewer Feedback: {result['feedback']}")
             print("=" * 80 + "\n")
             
             return result

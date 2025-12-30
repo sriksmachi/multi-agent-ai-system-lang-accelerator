@@ -1,0 +1,281 @@
+swagger: '2.0'
+info:
+  title: MCP Streamable HTTP Server
+  description: >-
+    Multi-agent post generator with MCP streamable protocol support.
+    Compatible with Microsoft Copilot Studio.
+  version: 1.0.0
+host: langfuseappservice.azurewebsites.net
+basePath: /
+schemes:
+  - https
+consumes:
+  - application/json
+produces:
+  - application/json
+paths:
+  /:
+    get:
+      summary: API Root
+      operationId: GetRoot
+      produces:
+        - application/json
+      responses:
+        '200':
+          description: Success
+  
+  /health:
+    get:
+      summary: Health Check
+      operationId: HealthCheck
+      produces:
+        - application/json
+      responses:
+        '200':
+          description: Success
+          schema:
+            $ref: '#/definitions/HealthResponse'
+  
+  /mcp/tools:
+    get:
+      summary: List MCP Tools
+      operationId: ListMCPTools
+      produces:
+        - application/json
+      responses:
+        '200':
+          description: Success
+          schema:
+            $ref: '#/definitions/MCPToolsResponse'
+  
+  /mcp/tools/call:
+    post:
+      summary: Call MCP Tool
+      x-ms-agentic-protocol: mcp-streamable-1.0
+      description: Call MCP tools using FastMCP with automatic streaming support
+      operationId: CallMCPTool
+      consumes:
+        - application/json
+      produces:
+        - application/json
+        - text/event-stream
+      parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            type: object
+            required:
+              - method
+              - params
+            properties:
+              method:
+                type: string
+                description: Method name (tools/call)
+                default: tools/call
+              params:
+                type: object
+                required:
+                  - name
+                  - arguments
+                properties:
+                  name:
+                    type: string
+                    description: Tool name
+                    enum:
+                      - generate_linkedin_post
+                      - generate_linkedin_post_streaming
+                  arguments:
+                    type: object
+                    properties:
+                      topic:
+                        type: string
+                        description: Topic for the LinkedIn post
+                      user_id:
+                        type: string
+                        description: Optional user identifier
+      responses:
+        '200':
+          description: Success
+        '400':
+          description: Bad Request
+        '500':
+          description: Internal Server Error
+  
+  /mcp/v1/:
+    post:
+      summary: MCP JSON-RPC Endpoint
+      operationId: MCPJsonRPC
+      operationId: MCPJsonRPC
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      responses:
+        '200':
+          description: Success
+          schema:
+            $ref: '#/definitions/JsonRpcResponse'
+  
+  /mcp/v1/sse:
+    get:
+      summary: MCP SSE Endpoint
+      operationId: MCPServerSentEvents
+      produces:
+        - text/event-stream
+      responses:
+        '200':
+          description: Success
+  
+  /mcp/v1/health:
+    get:
+      summary: MCP Health Check
+      operationId: MCPHealthCheck
+      produces:
+        - application/json
+      responses:
+        '200':
+          description: Success
+          schema:
+            $ref: '#/definitions/MCPHealthResponse'
+
+definitions:
+  ChatRequest:
+    type: object
+    required:
+      - user_id
+      - query
+    properties:
+      user_id:
+        type: string
+        description: User identifier
+      query:
+        type: string
+        description: Topic for post generation
+  
+  GeneratePostResponse:
+    type: object
+    properties:
+      post:
+        type: string
+      platform:
+        type: string
+      trace_id:
+        type: string
+  
+  HealthResponse:
+    type: object
+    properties:
+      status:
+        type: string
+      message:
+        type: string
+      version:
+        type: string
+  
+  MCPToolsResponse:
+    type: object
+    properties:
+      protocol:
+        type: string
+      tools:
+        type: array
+        items:
+          type: object
+      timestamp:
+        type: string
+  
+  MCPInvokeRequest:
+    type: object
+    required:
+      - tool
+      - user_id
+    properties:
+      tool:
+        type: string
+        description: Tool name to invoke
+      parameters:
+        type: object
+        description: Tool parameters
+      user_id:
+        type: string
+        description: User identifier
+      thread_id:
+        type: string
+        description: Thread ID
+      stream:
+        type: boolean
+        description: Enable streaming
+        default: false
+      metadata:
+        type: object
+        description: Additional metadata
+  
+  MCPInvokeResponse:
+    type: object
+    properties:
+      protocol:
+        type: string
+      tool:
+        type: string
+      result:
+        type: object
+      user_id:
+        type: string
+      trace_id:
+        type: string
+      timestamp:
+        type: string
+  
+  JsonRpcRequest:
+    type: object
+    required:
+      - jsonrpc
+      - method
+      - id
+    properties:
+      jsonrpc:
+        type: string
+        enum:
+          - "2.0"
+      id:
+        type: string
+      method:
+        type: string
+        enum:
+          - initialize
+          - tools/list
+          - tools/call
+      params:
+        type: object
+  
+  JsonRpcResponse:
+    type: object
+    properties:
+      jsonrpc:
+        type: string
+      id:
+        type: string
+      result:
+        type: object
+      error:
+        type: object
+  
+  MCPHealthResponse:
+    type: object
+    properties:
+      status:
+        type: string
+      protocol:
+        type: string
+      version:
+        type: string
+      server:
+        type: string
+      serverVersion:
+        type: string
+
+responses: {}
+security: []
+tags: []
+securityDefinitions: {}

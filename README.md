@@ -1,6 +1,43 @@
 # multi-agent-ai-system-lang-accelerator
 
-A solution accelerator for building scalable, observable, reliable Multi-Agent systems.
+A solution accelerator for building scalable, observable, reliable Multi-Agent systems using FastMCP (Model Context Protocol).
+
+## Quick Start
+
+### Running the API
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the FastMCP API server
+python -m api.main
+```
+
+The API will be available at:
+- **API Docs**: http://localhost:8000/docs
+- **Health Check**: http://localhost:8000/health
+- **MCP Tools**: http://localhost:8000/mcp/tools
+
+### Using the Client
+
+```bash
+# Interactive mode
+python clients/mcp_client.py
+```
+
+See [clients/README.md](clients/README.md) for full client documentation.
+
+### Architecture
+
+- **FastMCP Server** (`/mcp/*`) - Standards-compliant MCP protocol with streaming
+- **Multi-Agent Workflow** - Planner, Researcher, Writer, Reviewer agents
+- **Observability** - OpenTelemetry + Azure Monitor tracing
+- **Document Search** - Azure AI Search with vector embeddings
+
+See [docs/FASTMCP_INTEGRATION.md](docs/FASTMCP_INTEGRATION.md) for detailed architecture.
+
+---
 
 ## PDF Data Pipeline
 

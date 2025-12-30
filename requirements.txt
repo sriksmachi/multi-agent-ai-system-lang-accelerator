@@ -30,7 +30,12 @@ requests
 requests-toolbelt
 uvicorn
 sse_starlette
+fastmcp==2.14.1
 azure-ai-projects
 azure-monitor-opentelemetry==1.8.1
 opentelemetry-instrumentation-openai-v2
 opentelemetry-instrumentation-fastapi
+
+# Client libraries
+requests
+httpx

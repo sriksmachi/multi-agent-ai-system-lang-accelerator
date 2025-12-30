@@ -126,8 +126,9 @@ async def list_mcp_tools():
 
 
 @router.post(
-    "/invoke",
-    summary="Invoke MCP Tool",
+    "/tools/call",
+    response_model=None,
+    tags=["MCP Protocol"],
     description="Invoke an MCP tool with optional streaming support",
     responses={
         200: {

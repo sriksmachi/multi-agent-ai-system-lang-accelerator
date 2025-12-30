@@ -1,10 +1,5 @@
 """
-FastAPI application for the agentic post generator.
-
-Endpoints:
-- GET /health: Health check
-- POST /sessions: Create/resume session
-- POST /posts:generate: Generate post
+FastAPI application for the agentic post generator using FastMCP.
 """
 
 import os
@@ -33,22 +28,16 @@ OpenAIInstrumentor().instrument()
 # Now import FastAPI and other dependencies
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
-from sse_starlette.sse import EventSourceResponse
+from fastapi.responses import JSONResponse
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry import trace
 from azure.core.settings import settings
 import uvicorn
 
 from api.schemas import (
-    ChatRequest,
-    GeneratePostResponse,
     HealthResponse,
     ErrorResponse,
 )
-
-# Import workflows AFTER OpenAI instrumentation is configured
-from workflows import run_post_generator
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -63,9 +52,9 @@ settings.tracing_implementation = "opentelemetry"
 
 # Create FastAPI app
 app = FastAPI(
-    title="Multi Agent Linked in post generator",
-    description="Multi-agent system for generating platform specific posts using LLMs, KBs, and tools.",
-    version="0.1.0",
+    title="Multi-Agent LinkedIn Post Generator with FastMCP",
+    description="Multi-agent system for generating LinkedIn posts using FastMCP protocol. Access tools via MCP endpoints.",
+    version="0.2.0",
 )
 
 # Instrument FastAPI (must be done after app creation)
@@ -80,7 +69,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include MCP routes
+# Include MCP routes (uses workflows directly)
 from api.routes.mcp_routes import router as mcp_router
 app.include_router(mcp_router)
 
@@ -113,7 +102,13 @@ async def general_exception_handler(request, exc):
 @app.get("/", include_in_schema=False)
 async def root():
     """Root endpoint redirect to docs."""
-    return {"message": "Agentic Post Generator API", "docs": "/docs", "health": "/health"}
+    return {
+        "message": "Multi-Agent LinkedIn Post Generator API with FastMCP",
+        "docs": "/docs",
+        "health": "/health",
+        "mcp_tools": "/mcp/tools",
+        "mcp_call": "/mcp/tools/call"
+    }
 
 @app.get(
     "/health",
@@ -128,158 +123,9 @@ async def health_check():
     """
     return HealthResponse(
         status="healthy",
-        message="API is running",
-        version="0.1.0"
+        message="FastMCP API is running",
+        version="0.2.0"
     )
-
-@app.post(
-    "/chat",
-    response_model=GeneratePostResponse,
-    summary="Chat Endpoint",
-    description="Generate social media post based on user input.",
-)
-async def generate_post(request: ChatRequest):
-    """
-    Generate a social media post.
-    
-    Args:
-        request: ChatRequest with user_id and query
-        
-    Returns:
-        GeneratePostResponse with post and platform
-        
-    Raises:
-        HTTPException: If generation fails
-    """
-    with tracer.start_as_current_span(
-        "generate_post_api",
-        attributes={
-            "user_id": request.user_id,
-            "api.endpoint": "/chat",
-            "api.method": "POST",
-            "query": request.query,
-            "query_length": len(request.query),
-        }
-    ) as span:
-        try:
-            # Add thread tracking for conversation context
-            thread_id = f"thread_{request.user_id}_{datetime.now().strftime('%Y%m%d')}"
-            span.set_attribute("gen_ai.thread.id", thread_id)
-            
-            span.add_event("gen_ai.request.received", {
-                "user_id": request.user_id,
-                "query_length": len(request.query),
-                "gen_ai.thread.id": thread_id
-            })
-            
-            logger.info(f"[{request.user_id}] API: Received post generation request for query: {request.query}")
-
-            # Run the workflow
-            result = run_post_generator(
-                user_id=request.user_id,
-                topic=request.query,
-                thread_id=thread_id
-            )
-            
-            span.set_attribute("success", True)
-            span.set_attribute("trace_id", result.get("trace_id", ""))
-            span.set_attribute("post_length", len(result.get("post", "")))
-            span.set_attribute("platform", result.get("platform", "unknown"))
-            
-            span.add_event("gen_ai.response.completed", {
-                "post_length": len(result.get("post", "")),
-                "trace_id": result.get("trace_id", ""),
-                "gen_ai.event.content": json.dumps({"post": result.get("post", "")})
-            })
-            
-            
-            logger.info(f"[{request.user_id}] API: Post generation completed successfully")
-            
-            return GeneratePostResponse(**result)
-            
-        except ValueError as e:
-            # Handle retriever errors (e.g., FAISS index not found)
-            span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
-            span.record_exception(e)
-            logger.error(f"[{request.user_id}] API: Retriever error: {e}", exc_info=True)
-            raise HTTPException(
-                status_code=status.HTTP_424_FAILED_DEPENDENCY,
-                detail=f"Retriever error: {str(e)}. Ensure FAISS index is built.",
-            )
-        except Exception as e:
-            span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
-            span.record_exception(e)
-            logger.error(f"[{request.user_id}] API: Error generating post: {e}", exc_info=True)
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Post generation failed: {str(e)}",
-            )
-            
-            
-# streaming API endpoint 
-@app.post(
-    "/chat/stream",
-    response_model=GeneratePostResponse,
-    summary="Streaming Chat Endpoint",
-    description="Generate social media post based on user input with streaming response.",
-)
-async def generate_post_stream(request: ChatRequest):
-    """
-    Generate a social media post with streaming response.
-    
-    Args:
-        request: ChatRequest with user_id and query
-        
-    Returns:
-        StreamingResponse with post chunks
-        
-    Raises:
-        HTTPException: If generation fails
-    """
-    async def event_generator():
-        with tracer.start_as_current_span(
-            "generate_post_stream_api",
-            attributes={
-                "user_id": request.user_id,
-                "api.endpoint": "/chat/stream",
-                "api.method": "POST",
-                "query": request.query,
-                "query_length": len(request.query),
-            }
-        ) as span:
-            try:
-                thread_id = f"thread_{request.user_id}_{datetime.now().strftime('%Y%m%d')}"
-                span.set_attribute("gen_ai.thread.id", thread_id)
-                
-                span.add_event("gen_ai.request.received", {
-                    "user_id": request.user_id,
-                    "query_length": len(request.query),
-                    "gen_ai.thread.id": thread_id
-                })
-                
-                logger.info(f"[{request.user_id}] API: Received streaming post generation request for query: {request.query}")
-
-                # Run the workflow in streaming mode
-                async for chunk in run_post_generator(
-                    user_id=request.user_id,
-                    topic=request.query,
-                    thread_id=thread_id,
-                    stream=True
-                ):
-                    yield chunk
-                
-                span.set_attribute("success", True)
-                logger.info(f"[{request.user_id}] API: Streaming post generation completed successfully")
-                
-            except Exception as e:
-                span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
-                span.record_exception(e)
-                logger.error(f"[{request.user_id}] API: Error generating streaming post: {e}", exc_info=True)
-                yield f"data: {{\"error\": \"Post generation failed: {str(e)}\"}}\n\n"
-    
-    return EventSourceResponse(event_generator())
-
-
 
 
 if __name__ == "__main__":

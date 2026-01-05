@@ -56,7 +56,7 @@ from typing import Optional, Iterator, Dict, Any, AsyncIterator
 from datetime import datetime
 from dotenv import load_dotenv
 
-from azure.identity import DefaultAzureCredential, ManagedIdentityCredential
+from azure.identity import DefaultAzureCredential, ManagedIdentityCredential, AzureCliCredential
 from azure.cosmos import CosmosClient
 from azure.cosmos.exceptions import CosmosHttpResponseError
 from langchain_core.runnables import RunnableConfig
@@ -191,8 +191,8 @@ class CosmosDBCheckpointer(BaseCheckpointSaver):
                 credential = ManagedIdentityCredential()
                 self.client = CosmosClient(self.endpoint, credential=credential)
             else:
-                logger.info("Connecting to Cosmos DB with credential")
-                credential = DefaultAzureCredential()
+                logger.info("Connecting to Cosmos DB with key based credentials")
+                credential = AzureCliCredential()
                 self.client = CosmosClient(self.endpoint, credential=credential)
 
             self.database = self.client.get_database_client(self.database_name)

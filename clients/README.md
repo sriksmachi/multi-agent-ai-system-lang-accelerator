@@ -2,6 +2,8 @@
 
 Unified client for the Multi-Agent LinkedIn Post Generator FastMCP server.
 
+Built using the official [FastMCP Client library](https://gofastmcp.com/clients/client).
+
 ## Features
 
 ✅ **Interactive Console Mode** - User-friendly menu-driven interface  
@@ -9,7 +11,7 @@ Unified client for the Multi-Agent LinkedIn Post Generator FastMCP server.
 ✅ **Streaming Support** - Real-time content generation  
 ✅ **Non-Streaming Support** - Get complete results at once  
 ✅ **Tool Discovery** - List available MCP tools  
-✅ **Health Checks** - Verify API connectivity  
+✅ **Official FastMCP Client** - Uses the official FastMCP client library  
 
 ## Quick Start
 
@@ -20,34 +22,40 @@ python clients/mcp_client.py
 ```
 
 This launches an interactive menu where you can:
-1. Generate posts with instant results
-2. Generate posts with streaming (see content as it's created)
-3. List available tools
-4. Exit
+1. Generate posts
+2. List available tools
+3. Exit
 
 ### Programmatic Usage
 
 ```python
-from clients.mcp_client import MCPClient
+from clients.mcp_client import MCPClientWrapper
 import asyncio
 
 async def example():
-    client = MCPClient("http://localhost:8000")
+    # Initialize client with MCP endpoint URL
+    client = MCPClientWrapper("http://localhost:8000/mcp")
     
-    # Check health
-    health = await client.check_health()
-    print(f"API Status: {health['status']}")
-    
-    # Generate post (non-streaming)
-    result = await client.generate_post("The future of AI")
-    print(result["content"])
-    
-    # Generate post (streaming)
-    async for chunk in await client.generate_post("AI ethics", stream=True):
-        if chunk.get("type") == "content":
-            print(chunk["content"], end="", flush=True)
-    
-    # List tools
+    async with client:
+        # Generate post (non-streaming)
+        result = await client.generate_post("The future of AI")
+        print(result)
+        
+        # Generate post (streaming)
+        result = await client.generate_post("AI ethics", stream=True)
+        print(result)
+        
+        # List tools
+        tools = await client.list_tools()
+        print(f"Available tools: {len(tools)} tools")
+        
+        # Call any tool directly
+        result = await client.call_tool(
+            "generate_linkedin_post",
+            {"topic": "Cloud computing trends"}
+        )
+
+asyncio.run(example())
     tools = await client.list_tools()
     for tool in tools["tools"]:
         print(f"- {tool['name']}")

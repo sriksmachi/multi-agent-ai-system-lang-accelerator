@@ -1,9 +1,28 @@
 swagger: '2.0'
 info:
-  title: MCP Streamable HTTP Server
+  title: LinkedIn Post Generator MCP Server
   description: >-
-    Multi-agent post generator with MCP streamable protocol support.
-    Compatible with Microsoft Copilot Studio.
+    FastMCP server for generating LinkedIn posts using a multi-agent system.
+    
+    **Copilot Studio Integration:**
+    
+    1. Open your agent in Copilot Studio
+    
+    2. Go to: Tools → Add Tool → New Tool → MCP
+    
+    3. Enter server URL: https://langfuseappservice.azurewebsites.net/mcp
+    
+    4. Save and test
+    
+    
+    The server uses FastMCP with streamable HTTP transport for MCP protocol compliance.
+    
+    
+    **Available Tools:**
+    
+    - generate_linkedin_post: Generate professional LinkedIn posts (non-streaming)
+    
+    - generate_linkedin_post_streaming: Generate posts with real-time streaming
   version: 1.0.0
 host: langfuseappservice.azurewebsites.net
 basePath: /
@@ -13,6 +32,7 @@ consumes:
   - application/json
 produces:
   - application/json
+  
 paths:
   /:
     get:
@@ -28,6 +48,7 @@ paths:
     get:
       summary: Health Check
       operationId: HealthCheck
+      description: FastMCP health check endpoint
       produces:
         - application/json
       responses:
@@ -36,110 +57,124 @@ paths:
           schema:
             $ref: '#/definitions/HealthResponse'
   
-  /mcp/tools:
-    get:
-      summary: List MCP Tools
-      operationId: ListMCPTools
-      produces:
-        - application/json
-      responses:
-        '200':
-          description: Success
-          schema:
-            $ref: '#/definitions/MCPToolsResponse'
-  
-  /mcp/tools/call:
+  /mcp:
     post:
-      summary: Call MCP Tool
+      summary: FastMCP Server Endpoint
       x-ms-agentic-protocol: mcp-streamable-1.0
-      description: Call MCP tools using FastMCP with automatic streaming support
-      operationId: CallMCPTool
+      operationId: MCPServer
       consumes:
         - application/json
       produces:
         - application/json
-        - text/event-stream
       parameters:
         - in: body
           name: body
           required: true
           schema:
             type: object
-            required:
-              - method
-              - params
             properties:
+              jsonrpc:
+                type: string
+                example: "2.0"
               method:
                 type: string
-                description: Method name (tools/call)
-                default: tools/call
+                example: "tools/call"
               params:
                 type: object
-                required:
-                  - name
-                  - arguments
-                properties:
-                  name:
-                    type: string
-                    description: Tool name
-                    enum:
-                      - generate_linkedin_post
-                      - generate_linkedin_post_streaming
-                  arguments:
-                    type: object
-                    properties:
-                      topic:
-                        type: string
-                        description: Topic for the LinkedIn post
-                      user_id:
-                        type: string
-                        description: Optional user identifier
+              id:
+                type: integer
+                example: 1
       responses:
         '200':
-          description: Success
+          description: Success - MCP JSON-RPC response
+          schema:
+            type: object
+            properties:
+              jsonrpc:
+                type: string
+              result:
+                type: object
+              id:
+                type: integer
         '400':
-          description: Bad Request
+          description: Bad Request - Invalid MCP request
         '500':
           description: Internal Server Error
-  
-  /mcp/v1/:
-    post:
-      summary: MCP JSON-RPC Endpoint
-      operationId: MCPJsonRPC
-      operationId: MCPJsonRPC
-      consumes:
-        - application/json
-      produces:
-        - application/json
+    options:
+      summary: CORS Preflight
+      operationId: MCPOptions
+      description: Handle CORS preflight requests for cross-origin access
       responses:
         '200':
           description: Success
-          schema:
-            $ref: '#/definitions/JsonRpcResponse'
-  
-  /mcp/v1/sse:
-    get:
-      summary: MCP SSE Endpoint
-      operationId: MCPServerSentEvents
-      produces:
-        - text/event-stream
-      responses:
-        '200':
-          description: Success
-  
-  /mcp/v1/health:
-    get:
-      summary: MCP Health Check
-      operationId: MCPHealthCheck
-      produces:
-        - application/json
-      responses:
-        '200':
-          description: Success
-          schema:
-            $ref: '#/definitions/MCPHealthResponse'
 
 definitions:
+  HealthResponse:
+    type: object
+    properties:
+      status:
+        type: string
+        example: healthy
+      message:
+        type: string
+        example: FastMCP API is running
+      version:
+        type: string
+        example: "0.2.0"
+  
+  MCPToolsListRequest:
+    type: object
+    required:
+      - jsonrpc
+      - method
+      - id
+    properties:
+      jsonrpc:
+        type: string
+        example: "2.0"
+      method:
+        type: string
+        example: "tools/list"
+      id:
+        type: integer
+        example: 1
+  
+  MCPToolCallRequest:
+    type: object
+    required:
+      - jsonrpc
+      - method
+      - params
+      - id
+    properties:
+      jsonrpc:
+        type: string
+        example: "2.0"
+      method:
+        type: string
+        example: "tools/call"
+      params:
+        type: object
+        properties:
+          name:
+            type: string
+            example: "generate_linkedin_post"
+          arguments:
+            type: object
+            properties:
+              topic:
+                type: string
+                example: "AI trends in 2026"
+              platform:
+                type: string
+                example: "linkedin"
+              user_id:
+                type: string
+                example: "optional-user-id"
+      id:
+        type: integer
+        example: 2
+  
   ChatRequest:
     type: object
     required:
@@ -171,6 +206,25 @@ definitions:
       message:
         type: string
       version:
+        type: string
+  
+  MCPToolCallResponse:
+    type: object
+    properties:
+      protocol:
+        type: string
+        default: mcp-streamable-1.0
+      tool:
+        type: string
+      result:
+        type: object
+      user_id:
+        type: string
+      thread_id:
+        type: string
+      trace_id:
+        type: string
+      timestamp:
         type: string
   
   MCPToolsResponse:

@@ -10,6 +10,7 @@ Implements the Planner → Researcher → Writer → Reviewer pattern with:
 
 import os
 import json
+import asyncio
 from typing import Literal, Dict, Any
 from datetime import datetime
 
@@ -567,17 +568,16 @@ def build_post_generator_workflow() -> StateGraph:
 # MAIN EXECUTION FUNCTION
 # ============================================================================
 
-def run_post_generator(
+def configure_post_generator(
     user_id: str,
     topic: str,
     platform: str = "linkedin",
     tone: str = None,
     max_refinements: int = None,
-    thread_id: str = None,
-    stream: bool = False
+    thread_id: str = None
 ):
     """
-    Execute the post generator workflow.
+    Build and compile the post generator workflow.
     
     Args:
         user_id: User identifier for tracking
@@ -585,165 +585,50 @@ def run_post_generator(
         platform: Target platform (linkedin, twitter, etc.)
         tone: Writing tone (professional, casual, etc.)
         max_refinements: Maximum refinement iterations
+        thread_id: Thread identifier for checkpointing
         
     Returns:
-        Dict with final_post, scores, trace_id, etc.
+        Tuple of (compiled_workflow, initial_state, config)
     """
-    # Generate conversation ID
-    conversation_id = f"conv-{user_id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
     thread_id = thread_id or str(uuid.uuid4())
+
+    # Build workflow
+    workflow = build_post_generator_workflow()
     
-    with tracer.start_as_current_span(
-        "run_post_generator",
-        attributes={
-            "user_id": user_id,
-            "conversation_id": conversation_id,
+    # Initialize Cosmos DB checkpointer
+    logger.info(f"[{user_id}][{thread_id}] Initializing Cosmos DB checkpointer")
+    checkpointer = CosmosDBCheckpointer()
+    
+    # Compile workflow with or without checkpointer
+    if checkpointer.container:
+        logger.info(f"[{user_id}][{thread_id}] Cosmos DB checkpointer ready")
+        compiled_workflow = workflow.compile(checkpointer=checkpointer)
+        logger.info(f"[{user_id}][{thread_id}] Graph compiled with checkpointer")
+    else:
+        logger.warning(f"[{user_id}][{thread_id}] Cosmos DB not available, compiling without checkpointer")
+        compiled_workflow = workflow.compile()
+    
+    # Configure checkpointing
+    config = {
+        "configurable": {
             "thread_id": thread_id,
-            "topic": topic,
-            "platform": platform,
+            "checkpoint_ns": "",
         }
-    ) as span:
-        try:
-            
-            logger.info(
-                f"[{user_id}][{thread_id}] Starting post generation workflow",
-                extra={
-                    "user_id": user_id,
-                    "conversation_id": conversation_id,
-                    "thread_id": thread_id,
-                    "topic": topic,
-                    "platform": platform,
-                    "tone": tone
-                }
-            )
-            
-            # Build workflow
-            workflow = build_post_generator_workflow()
-            
-            # Initialize Cosmos DB checkpointer
-            logger.info(f"[{user_id}][{thread_id}] Initializing Cosmos DB checkpointer")
-            checkpointer = CosmosDBCheckpointer()
-            
-            # Compile workflow with or without checkpointer
-            if checkpointer.container:
-                logger.info(f"[{user_id}][{thread_id}] Cosmos DB checkpointer ready")
-                compiled_workflow = workflow.compile(checkpointer=checkpointer)
-                logger.info(f"[{user_id}][{thread_id}] Graph compiled with checkpointer")
-            else:
-                logger.warning(f"[{user_id}][{thread_id}] Cosmos DB not available, compiling without checkpointer")
-                compiled_workflow = workflow.compile()
-            
-            # Configure checkpointing
-            config = {
-                "configurable": {
-                    "thread_id": thread_id,
-                    "checkpoint_ns": "",
-                }
-            }
-            
-            # Initialize state
-            initial_state = PostGeneratorState(
-                user_id=user_id,
-                topic=topic,
-                platform=platform,
-                thread_id=thread_id,
-                tone=tone,
-                max_refinements=max_refinements or int(os.getenv("MAX_REFINEMENT_LOOPS", "2"))
-            )
-            
-            # Execute workflow (streaming or non-streaming)
-            if stream:
-                # Streaming mode: return async generator
-                async def stream_generator():
-                    """Async generator for streaming workflow updates."""
-                    final_state = None
-                    for chunk in compiled_workflow.stream(initial_state.model_dump(), config=config, stream_mode="updates"):
-                        # Store final state for metadata
-                        if chunk:
-                            final_state = chunk
-                        
-                        # Extract content from chunk for streaming
-                        if isinstance(chunk, dict):
-                            for node_name, node_output in chunk.items():
-                                if isinstance(node_output, dict):
-                                    # Stream writer agent output if available
-                                    if "draft" in node_output:
-                                        yield f"data: {json.dumps({'content': node_output['draft'], 'node': node_name})}\n\n"
-                                    elif "final_post" in node_output:
-                                        yield f"data: {json.dumps({'content': node_output['final_post'], 'node': node_name})}\n\n"
-                                    elif "plan" in node_output:
-                                        yield f"data: {json.dumps({'content': node_output['plan'], 'node': node_name})}\n\n"
-                    
-                    # Send final metadata
-                    if final_state:
-                        trace_id = format(span.get_span_context().trace_id, '032x')
-                        metadata = {
-                            "metadata": {
-                                "trace_id": trace_id,
-                                "conversation_id": conversation_id,
-                                "platform": platform,
-                                "scores": final_state.get("scores", {}),
-                                "refinement_count": final_state.get("refinement_count", 0),
-                            }
-                        }
-                        yield f"data: {json.dumps(metadata)}\n\n"
-                
-                return stream_generator()
-            else:
-                # Non-streaming mode: return complete result
-                result = compiled_workflow.invoke(initial_state.model_dump(), config=config)
-            
-            # Extract final results
-            final_post = result.get("final_post", "")
-            scores = result.get("scores", {})
-            refinement_count = result.get("refinement_count", 0)
-            
-            # Get trace ID from current span
-            trace_id = format(span.get_span_context().trace_id, '032x')
-            
-            output = {
-                "post_markdown": final_post,
-                "scores": scores,
-                "refinement_count": refinement_count,
-                "trace_id": trace_id,
-                "conversation_id": conversation_id,
-                "platform": platform,
-                "feedback": result.get("feedback", "")
-            }
-            
-            span.set_attribute("success", True)
-            span.set_attribute("refinement_count", refinement_count)
-            span.set_attribute("post_length", len(final_post))
-            span.set_status(Status(StatusCode.OK))
-            
-            logger.info(
-                f"[{user_id}][{thread_id}] Post generation completed successfully",
-                extra={
-                    "user_id": user_id,
-                    "conversation_id": conversation_id,
-                    "thread_id": thread_id,
-                    "refinement_count": refinement_count,
-                    "post_length": len(final_post),
-                    "trace_id": trace_id
-                }
-            )
-            
-            return output
-            
-        except Exception as e:
-            logger.error(
-                f"[{user_id}][{thread_id}] Post generation failed: {e}",
-                extra={
-                    "user_id": user_id,
-                    "conversation_id": conversation_id,
-                    "thread_id": thread_id,
-                    "error": str(e)
-                },
-                exc_info=True
-            )
-            span.set_status(Status(StatusCode.ERROR, str(e)))
-            span.record_exception(e)
-            raise
+    }
+    
+    # Initialize state
+    initial_state = PostGeneratorState(
+        user_id=user_id,
+        topic=topic,
+        platform=platform,
+        thread_id=thread_id,
+        tone=tone,
+        max_refinements=max_refinements or int(os.getenv("MAX_REFINEMENT_LOOPS", "2"))
+    )
+    
+    logger.info(f"[{user_id}][{thread_id}] Workflow compiled and ready")
+    
+    return compiled_workflow, initial_state, config
 
 
 # ============================================================================
@@ -753,5 +638,5 @@ def run_post_generator(
 __all__ = [
     "PostGeneratorState",
     "build_post_generator_workflow",
-    "run_post_generator",
+    "configure_post_generator",
 ]

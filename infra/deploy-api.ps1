@@ -1,14 +1,14 @@
 # Requires -Version 7.0
 
 param(
-    [string]$ResourceGroupName="rg-langfuse",
-    [string]$AppServiceName="langfuseappservice",
+    [string]$ResourceGroupName="sriks-ml-rg",
+    [string]$AppServiceName="socialmediagenerator-api",
     [string]$Location = "southeastasia",
-    [string]$AppServicePlan="langfuse-sriks",
+    [string]$AppServicePlan="socialmediagenerator-api-plan",
     [string]$Sku = "S1",
     [string]$EnvFilePath = "../.env",
-    [string]$AcrName="acrlangfuse5497",
-    [string]$ImageName = "fastapi-app",
+    [string]$AcrName="socialmediageneratoracr",
+    [string]$ImageName = "socialmediagenerator-api",
     [string]$ImageTag = "latest"
 )
 

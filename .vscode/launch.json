@@ -11,7 +11,7 @@
             "module": "uvicorn",
             "python": "${workspaceFolder}/.venv/Scripts/python.exe",
             "args": [
-                "api.main:app",
+                "api.main:starlette_app",
                 "--reload"
             ],
             "jinja": true

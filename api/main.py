@@ -2,14 +2,11 @@
 FastAPI application for the agentic post generator using FastMCP.
 """
 
+import asyncio
 import os
-import uuid
-import json
 import logging
 from datetime import datetime
-from contextlib import asynccontextmanager
-from typing import Dict, AsyncGenerator
-
+from typing import Optional
 from dotenv import load_dotenv
 
 # Load environment variables FIRST
@@ -33,117 +30,145 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry import trace
 from azure.core.settings import settings
 import uvicorn
+from starlette.middleware.cors import CORSMiddleware
+from mcp.server.fastmcp import Context, FastMCP
+from mcp import ServerSession
 
 from api.schemas import (
     HealthResponse,
     ErrorResponse,
 )
 
+from workflows import configure_post_generator
+
+
+# Configure logging to console FIRST - force configuration
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ],
+    force=True  # Force reconfiguration
+)
+
 # Initialize logger
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+logger.propagate = True
+
+# Ensure console handler is added
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(console_handler)
 
 # Suppress noisy Azure loggers
 logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
 logging.getLogger("azure.monitor.opentelemetry.exporter.export._base").setLevel(logging.WARNING)
+logging.getLogger("azure.cosmos._cosmos_http_logging_policy").setLevel(logging.WARNING)
+logging.getLogger("mcp.server.transport_security").setLevel(logging.ERROR)
 
 # Initialize tracer
 tracer = trace.get_tracer(__name__)
 settings.tracing_implementation = "opentelemetry"
 
-# Create FastAPI app
-app = FastAPI(
-    title="Multi-Agent LinkedIn Post Generator with FastMCP",
-    description="Multi-agent system for generating LinkedIn posts using FastMCP protocol. Access tools via MCP endpoints.",
-    version="0.2.0",
-)
+mcp = FastMCP("SocialMediaPostGenerator")
 
-# Instrument FastAPI (must be done after app creation)
-FastAPIInstrumentor.instrument_app(app)
+# Get the Starlette app and configure CORS immediately
+starlette_app = mcp.streamable_http_app()
 
-# Add CORS middleware (configure for production)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # TODO: Configure specific origins for production
-    allow_credentials=True,
+# Then wrap it with CORS middleware
+starlette_app = CORSMiddleware(
+    starlette_app,
+    allow_origins=["*"],
+    allow_credentials=False,  # Set to False when allow_origins is ["*"]
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
 
-# Include MCP routes (uses workflows directly)
-from api.routes.mcp_routes import router as mcp_router
-app.include_router(mcp_router)
-
-# Exception handler for HTTPException
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request, exc):
-    """Handle HTTP exceptions with standard error format."""
-    return JSONResponse(
-        status_code=exc.status_code,
-        content=ErrorResponse(
-            error=exc.__class__.__name__,
-            message=exc.detail,
-        ).model_dump(),
-    )
-
-# Exception handler for general exceptions
-@app.exception_handler(Exception)
-async def general_exception_handler(request, exc):
-    """Handle unexpected exceptions."""
-    logger.error(f"Unexpected error: {exc}", exc_info=True)
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content=ErrorResponse(
-            error="InternalServerError",
-            message="An unexpected error occurred. Please try again later.",
-            detail=str(exc) if os.getenv("DEBUG", "false").lower() == "true" else None,
-        ).model_dump(),
-    )
-
-@app.get("/", include_in_schema=False)
-async def root():
-    """Root endpoint redirect to docs."""
-    return {
-        "message": "Multi-Agent LinkedIn Post Generator API with FastMCP",
-        "docs": "/docs",
-        "health": "/health",
-        "mcp_tools": "/mcp/tools",
-        "mcp_call": "/mcp/tools/call"
-    }
-
-@app.get(
-    "/health",
-    response_model=HealthResponse,
-    summary="Health Check",
-    description="Check API health and component status",
-)
-async def health_check():
+@mcp.tool()
+async def generate_linkedin_post(
+    topic: str,
+    ctx: Context[ServerSession, None],
+    user_id: Optional[str] = None,
+) -> str:  # Keep return type str
     """
-    Health check endpoint.
-    Returns status of all major components:
+    Generate a professional LinkedIn post with real-time streaming updates.
     """
-    return HealthResponse(
-        status="healthy",
-        message="FastMCP API is running",
-        version="0.2.0"
-    )
+    if not user_id:
+        user_id = f"mcp-user-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
+    thread_id = f"thread_{user_id}_{datetime.now().strftime('%Y%m%d')}"
+    logger.info(f"[{user_id}] FastMCP: Streaming LinkedIn post for topic: {topic}")
+
+    with tracer.start_as_current_span("fastmcp_generate_linkedin_post_streaming") as span:
+        try:
+            await ctx.info(f"Starting generation for: {topic}")
+            await ctx.report_progress(0.1, message="Initializing workflow...")
+
+            compiled_workflow, initial_state, config = configure_post_generator(
+                user_id=user_id,
+                topic=topic,
+                thread_id=thread_id
+            )
+
+            await ctx.report_progress(0.2, message="Workflow ready")
+
+            accumulated = ""
+
+            for chunk in compiled_workflow.stream(initial_state.model_dump(), config=config, stream_mode="updates"):
+                if isinstance(chunk, dict):
+                    for node_name, node_output in chunk.items():
+                        if isinstance(node_output, dict):
+                            # Stream draft as it appears
+                            if draft := node_output.get("draft"):
+                                new_part = draft[len(accumulated):]
+                                if new_part:
+                                    await ctx.info(new_part)  # ← This streams visible text
+                                    accumulated += new_part
+                                await ctx.report_progress(0.5, message="Drafting post...")
+
+                            # Stream final post
+                            elif final := node_output.get("final_post"):
+                                new_part = final[len(accumulated):]
+                                if new_part:
+                                    await ctx.info(new_part)  # ← Visible streaming
+                                    accumulated += new_part
+                                await ctx.report_progress(0.9, message="Finalizing...")
+
+                            # Optional: show agent messages
+                            for msg in node_output.get("messages", []):
+                                role = msg.get("role", "agent")
+                                content = msg.get("content", "")
+                                if content:
+                                    await ctx.info(f"[{role}] {content}")
+
+            await ctx.report_progress(1.0, message="Complete!")
+            await ctx.info("Post generation finished")
+
+            span.set_attribute("success", True)
+            return accumulated  # Final full post
+
+        except Exception as e:
+            await ctx.error(f"Error: {str(e)}")
+            logger.error(f"Streaming error: {e}", exc_info=True)
+            raise
+        
+@mcp.tool()
+async def greet(ctx: Context[ServerSession, None], name: str = "World") -> str:
+    """Greet someone by name."""
+    await ctx.info(f"Starting to greet {name}")
+    await ctx.report_progress(0.5, message="processing..")
+    await ctx.debug("Halfway through processing")
+    await asyncio.sleep(1)
+    await ctx.report_progress(1.0, message="processing complete!")
+    await ctx.info(f"Successfully greeted {name}")
+    return f"Hello, {name}!"
 
 if __name__ == "__main__":
-
-    # Run with: python -m api.main
-    # Or: uvicorn api.main:app --reload
-    
+    # Run the server
     host = os.getenv("API_HOST", "0.0.0.0")
     port = int(os.getenv("API_PORT", "8000"))
-    reload = os.getenv("API_RELOAD", "true").lower() == "true"
-    
-    logger.info(f"Starting server at http://{host}:{port}")
-    logger.info(f"API docs at http://{host}:{port}/docs")
-    
-    uvicorn.run(
-        "api.main:app",
-        host=host,
-        port=port,
-        reload=reload,
-        log_level=os.getenv("LOG_LEVEL", "info").lower(),
-    )
+    uvicorn.run(starlette_app, host=host, port=port)

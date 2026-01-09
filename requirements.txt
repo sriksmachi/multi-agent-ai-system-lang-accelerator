@@ -25,6 +25,7 @@ deepeval
 
 # MCP protocol
 fastmcp==2.14.2
+mcp
 
 # Data models
 pydantic

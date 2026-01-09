@@ -52,6 +52,28 @@ output APPLICATIONINSIGHTS_NAME string = resources.outputs.applicationInsightsNa
 // AI Search outputs
 output AZURE_SEARCH_ENDPOINT string = resources.outputs.searchServiceEndpoint
 output AZURE_SEARCH_NAME string = resources.outputs.searchServiceName
+output AZURE_SEARCH_ADMIN_KEY string = resources.outputs.searchServiceKey
+output AZURE_SEARCH_INDEX_NAME string = 'documents-index'
+
+// Azure OpenAI outputs
+output AZURE_OPENAI_ENDPOINT string = resources.outputs.openAIEndpoint
+output AZURE_OPENAI_NAME string = resources.outputs.openAIName
+output AZURE_OPENAI_API_KEY string = resources.outputs.openAIKey
+output AZURE_OPENAI_DEPLOYMENT_NAME string = resources.outputs.openAIDeploymentName
+output AZURE_OPENAI_API_VERSION string = '2024-12-01-preview'
+output AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT string = resources.outputs.openAIEmbeddingsDeploymentName
+output AZURE_OPENAI_EMBEDDINGS_ENDPOINT string = resources.outputs.openAIEndpoint
+output AZURE_OPENAI_EMBEDDINGS_API_KEY string = resources.outputs.openAIKey
+output AZURE_OPENAI_EMBEDDINGS_API_VERSION string = '2023-05-15'
+output AZURE_DEPLOYMENT_NAME string = resources.outputs.openAIDeploymentName
+output AZURE_MODEL_NAME string = resources.outputs.openAIDeploymentName
+
+// Cosmos DB outputs
+output COSMOS_ENDPOINT string = resources.outputs.cosmosEndpoint
+output COSMOS_ACCOUNT_NAME string = resources.outputs.cosmosAccountName
+output COSMOS_PRIMARY_KEY string = resources.outputs.cosmosPrimaryKey
+output COSMOS_DATABASE_NAME string = resources.outputs.cosmosDatabaseName
+output COSMOS_CHECKPOINTS_CONTAINER string = resources.outputs.cosmosContainerName
 
 // AI Foundry outputs
 output AZURE_AI_FOUNDRY_NAME string = resources.outputs.aiFoundryName

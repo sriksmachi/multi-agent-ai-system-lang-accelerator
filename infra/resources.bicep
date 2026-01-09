@@ -75,6 +75,128 @@ resource searchService 'Microsoft.Search/searchServices@2023-11-01' = {
   }
 }
 
+// Azure OpenAI
+resource openAI 'Microsoft.CognitiveServices/accounts@2023-10-01-preview' = {
+  name: 'oai-${environmentName}'
+  location: location
+  tags: tags
+  kind: 'OpenAI'
+  sku: {
+    name: 'S0'
+  }
+  properties: {
+    customSubDomainName: 'oai-${environmentName}${uniqueString(resourceGroup().id)}'
+    publicNetworkAccess: 'Enabled'
+  }
+}
+
+// Azure OpenAI GPT-4o Deployment
+resource gpt4Deployment 'Microsoft.CognitiveServices/accounts/deployments@2023-10-01-preview' = {
+  parent: openAI
+  name: 'gpt-5.2-chat'
+  sku: {
+    name: 'Standard'
+    capacity: 50
+  }
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: 'gpt-4o'
+      version: '2024-08-06'
+    }
+  }
+}
+
+// Azure OpenAI Embeddings Deployment
+resource embeddingsDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-10-01-preview' = {
+  parent: openAI
+  name: 'text-embedding-3-small'
+  dependsOn: [
+    gpt4Deployment
+  ]
+  sku: {
+    name: 'Standard'
+    capacity: 50
+  }
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: 'text-embedding-3-small'
+      version: '1'
+    }
+  }
+}
+
+// Cosmos DB Account
+resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2023-11-15' = {
+  name: 'cosmos-${environmentName}${uniqueString(resourceGroup().id)}'
+  location: location
+  tags: tags
+  kind: 'GlobalDocumentDB'
+  properties: {
+    databaseAccountOfferType: 'Standard'
+    consistencyPolicy: {
+      defaultConsistencyLevel: 'Session'
+    }
+    locations: [
+      {
+        locationName: location
+        failoverPriority: 0
+        isZoneRedundant: false
+      }
+    ]
+    publicNetworkAccess: 'Enabled'
+    capabilities: [
+      {
+        name: 'EnableServerless'
+      }
+    ]
+  }
+}
+
+// Cosmos DB Database
+resource cosmosDatabase 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2023-11-15' = {
+  parent: cosmosAccount
+  name: 'content-generation-db'
+  properties: {
+    resource: {
+      id: 'content-generation-db'
+    }
+  }
+}
+
+// Cosmos DB Container for Checkpoints
+resource cosmosContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2023-11-15' = {
+  parent: cosmosDatabase
+  name: 'chat-history'
+  properties: {
+    resource: {
+      id: 'chat-history'
+      partitionKey: {
+        paths: [
+          '/thread_id'
+        ]
+        kind: 'Hash'
+      }
+      defaultTtl: 5184000 // 60 days
+      indexingPolicy: {
+        indexingMode: 'consistent'
+        automatic: true
+        includedPaths: [
+          {
+            path: '/*'
+          }
+        ]
+        excludedPaths: [
+          {
+            path: '/"_etag"/?'
+          }
+        ]
+      }
+    }
+  }
+}
+
 // Container Registry
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   name: 'cr${replace(environmentName, '-', '')}${uniqueString(resourceGroup().id)}'
@@ -158,6 +280,8 @@ resource aiProject 'Microsoft.MachineLearningServices/workspaces@2024-04-01' = {
 // Role Assignments for principal
 var storageRoleDefinitionId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe' // Storage Blob Data Contributor
 var searchRoleDefinitionId = '1407120a-92aa-4202-b7e9-c0e197c71c8f' // Search Index Data Contributor
+var cosmosRoleDefinitionId = '00000000-0000-0000-0000-000000000002' // Cosmos DB Built-in Data Contributor
+var cognitiveServicesUserRoleId = 'a97b65f3-24c7-4388-baec-2e87135dc908' // Cognitive Services User
 
 resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(principalId)) {
   scope: storageAccount
@@ -176,6 +300,26 @@ resource searchRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-0
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', searchRoleDefinitionId)
     principalId: principalId
     principalType: 'User'
+  }
+}
+
+resource openAIRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(principalId)) {
+  scope: openAI
+  name: guid(openAI.id, principalId, cognitiveServicesUserRoleId)
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', cognitiveServicesUserRoleId)
+    principalId: principalId
+    principalType: 'User'
+  }
+}
+
+resource cosmosRoleAssignment 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2023-11-15' = if (!empty(principalId)) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, principalId, cosmosRoleDefinitionId)
+  properties: {
+    roleDefinitionId: '/${subscription().id}/resourceGroups/${resourceGroup().name}/providers/Microsoft.DocumentDB/databaseAccounts/${cosmosAccount.name}/sqlRoleDefinitions/${cosmosRoleDefinitionId}'
+    principalId: principalId
+    scope: cosmosAccount.id
   }
 }
 
@@ -201,6 +345,7 @@ output applicationInsightsConnectionString string = appInsights.properties.Conne
 output applicationInsightsName string = appInsights.name
 output searchServiceEndpoint string = 'https://${searchService.name}.search.windows.net'
 output searchServiceName string = searchService.name
+output searchServiceKey string = searchService.listAdminKeys().primaryKey
 output aiFoundryName string = aiProject.name
 output aiFoundryEndpoint string = aiProject.properties.discoveryUrl
 output containerAppsEnvironmentName string = containerAppsEnvironment.name
@@ -211,3 +356,13 @@ output keyVaultName string = keyVault.name
 output aiHubName string = aiHub.name
 output apiUri string = api.outputs.uri
 output apiName string = api.outputs.name
+output openAIEndpoint string = openAI.properties.endpoint
+output openAIName string = openAI.name
+output openAIKey string = openAI.listKeys().key1
+output openAIDeploymentName string = gpt4Deployment.name
+output openAIEmbeddingsDeploymentName string = embeddingsDeployment.name
+output cosmosEndpoint string = cosmosAccount.properties.documentEndpoint
+output cosmosAccountName string = cosmosAccount.name
+output cosmosPrimaryKey string = cosmosAccount.listKeys().primaryMasterKey
+output cosmosDatabaseName string = cosmosDatabase.name
+output cosmosContainerName string = cosmosContainer.name

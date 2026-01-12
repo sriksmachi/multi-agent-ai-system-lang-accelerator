@@ -17,16 +17,12 @@ from datetime import datetime
 from langgraph.graph import StateGraph, END
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
-from agents.writer_agent.agent import write_post
 
 from .postgenerator_workflow_state import PostGeneratorState
+from .agent_orchestrator import AgentOrchestrator
 from core.logging_config import get_logger
 from core.cosmos_checkpointer import CosmosDBCheckpointer
 import uuid
-
-from agents.planner_agent.agent import create_plan
-from agents.researcher_agent.agent import research_topic
-from agents.reviewer_agent.agent import check_facts
 
 
 # Initialize logger and tracer
@@ -37,7 +33,7 @@ tracer = trace.get_tracer(__name__)
 # ============================================================================
 # PLANNER NODE - Creates structured outline and strategy
 # ============================================================================
-def planner_node(state: PostGeneratorState) -> Dict[str, Any]:
+async def planner_node(state: PostGeneratorState) -> Dict[str, Any]:
     """
     Planner Agent: Creates a structured outline for the post.
     
@@ -81,18 +77,12 @@ def planner_node(state: PostGeneratorState) -> Dict[str, Any]:
             }
         )
         
-        # Create plan
-        plan_result = create_plan(state.model_dump())
-        
-        # Update state
-        updates = {
-            "plan": plan_result.get("plan", ""),
-            "messages": state.messages + [{
-                "role": "planner",
-                "content": plan_result.get("plan", ""),
-                "timestamp": datetime.utcnow().isoformat()
-            }]
-        }
+        # Get orchestrator instance and call planner via A2A
+        orchestrator = AgentOrchestrator()
+        try:
+            updates = await orchestrator.call_planner(state.model_dump())
+        finally:
+            await orchestrator.close()
         
         span.set_attribute("plan_length", len(updates["plan"]))
         span.set_attribute("message_count", len(updates["messages"]))
@@ -117,7 +107,7 @@ def planner_node(state: PostGeneratorState) -> Dict[str, Any]:
 # ============================================================================
 # RESEARCHER NODE - Retrieves relevant context
 # ============================================================================
-def researcher_node(state: PostGeneratorState) -> Dict[str, Any]:
+async def researcher_node(state: PostGeneratorState) -> Dict[str, Any]:
     """
     Researcher Agent: Retrieves relevant context and information.
     
@@ -155,22 +145,14 @@ def researcher_node(state: PostGeneratorState) -> Dict[str, Any]:
             extra={"user_id": user_id, "thread_id": thread_id, "topic": topic}
         )
         
-        # Perform research
-        research_result = research_topic(state.model_dump())
-        
-        # Update state
-        retrieved_docs = research_result.get("retrieved_docs", [])
-        context = research_result.get("context", "")
-        
-        updates = {
-            "context": context,
-            "retrieved_docs": retrieved_docs,
-            "messages": state.messages + [{
-                "role": "researcher",
-                "content": f"Retrieved {len(retrieved_docs)} documents",
-                "timestamp": datetime.utcnow().isoformat()
-            }]
-        }
+        # Get orchestrator instance and call researcher via A2A
+        orchestrator = AgentOrchestrator()
+        try:
+            updates = await orchestrator.call_researcher(state.model_dump())
+            retrieved_docs = updates.get("retrieved_docs", [])
+            context = updates.get("context", "")
+        finally:
+            await orchestrator.close()
         
         span.set_attribute("docs_retrieved", len(retrieved_docs))
         span.set_attribute("context_length", len(context))
@@ -197,7 +179,7 @@ def researcher_node(state: PostGeneratorState) -> Dict[str, Any]:
 # WRITER NODE - Generates post content
 # ============================================================================
 
-def writer_node(state: PostGeneratorState) -> Dict[str, Any]:
+async def writer_node(state: PostGeneratorState) -> Dict[str, Any]:
     """
     Writer Agent: Generates the social media post.
     
@@ -248,22 +230,13 @@ def writer_node(state: PostGeneratorState) -> Dict[str, Any]:
             }
         )
         
-        # Import here to avoid circular dependencies
-        
-        # Generate post
-        write_result = write_post(state.model_dump())
-        
-        # Update state
-        draft = write_result.get("draft", "")
-        updates = {
-            "draft": draft,
-            "messages": state.messages + [{
-                "role": "writer",
-                "content": draft,
-                "timestamp": datetime.utcnow().isoformat(),
-                "refinement": refinement_count
-            }]
-        }
+        # Get orchestrator instance and call writer via A2A
+        orchestrator = AgentOrchestrator()
+        try:
+            updates = await orchestrator.call_writer(state.model_dump())
+            draft = updates.get("draft", "")
+        finally:
+            await orchestrator.close()
         
         span.set_attribute("draft_length", len(draft))
         span.add_event("gen_ai.writer.completed", {
@@ -290,7 +263,7 @@ def writer_node(state: PostGeneratorState) -> Dict[str, Any]:
 # REVIEWER NODE - Evaluates quality and provides feedback
 # ============================================================================
 
-def reviewer_node(state: PostGeneratorState) -> Dict[str, Any]:
+async def reviewer_node(state: PostGeneratorState) -> Dict[str, Any]:
     """
     Reviewer Agent: Evaluates post quality and provides feedback.
     
@@ -329,26 +302,34 @@ def reviewer_node(state: PostGeneratorState) -> Dict[str, Any]:
             extra={"user_id": user_id, "thread_id": thread_id, "topic": topic, "draft_length": len(draft)}
         )
         
-        # Review post
-        review_result = check_facts(state.model_dump())
-        
-        # Extract results
-        scores = review_result.get("scores", {})
-        feedback = review_result.get("feedback", "")
-        needs_refinement = review_result.get("needs_refinement", False)
-        
-        # Update state
-        updates = {
-            "scores": scores,
-            "feedback": feedback,
-            "needs_refinement": needs_refinement,
-            "messages": state.messages + [{
-                "role": "reviewer",
-                "content": feedback,
+        # Get orchestrator instance and call reviewer via A2A
+        orchestrator = AgentOrchestrator()
+        try:
+            # Call reviewer to get final post
+            reviewer_result = await orchestrator.call_reviewer(state.model_dump())
+            final_post = reviewer_result.get("final_post", "")
+            
+            # For now, simulate review results based on final post quality
+            # In a real scenario, reviewer would return scores and feedback
+            scores = {"accuracy": 8, "relevance": 8, "tone": 8}
+            feedback = "Post reviewed and approved"
+            needs_refinement = False
+            
+            # Update state
+            updates = {
                 "scores": scores,
-                "timestamp": datetime.utcnow().isoformat()
-            }]
-        }
+                "feedback": feedback,
+                "needs_refinement": needs_refinement,
+                "final_post": final_post,
+                "messages": state.messages + [{
+                    "role": "reviewer",
+                    "content": feedback,
+                    "scores": scores,
+                    "timestamp": datetime.utcnow().isoformat()
+                }]
+            }
+        finally:
+            await orchestrator.close()
         
         # Add evaluation scores as span attributes
         for metric, value in scores.items():

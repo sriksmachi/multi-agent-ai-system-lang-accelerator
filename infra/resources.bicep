@@ -5,7 +5,7 @@ param tags object = {}
 
 // Storage Account
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
-  name: 'st${replace(environmentName, '-', '')}${uniqueString(resourceGroup().id)}'
+  name: 'st${take(replace(environmentName, '-', ''), 9)}${uniqueString(resourceGroup().id)}'
   location: location
   tags: tags
   sku: {
@@ -323,11 +323,78 @@ resource cosmosRoleAssignment 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssi
   }
 }
 
-// Container App for API
-module api './app/api.bicep' = {
-  name: 'api'
+// Container App for Planner Agent
+module plannerAgent './app/agent-planner.bicep' = {
+  name: 'planner-agent'
   params: {
-    name: 'ca-api-${environmentName}'
+    name: 'ca-planner-${environmentName}'
+    location: location
+    tags: tags
+    containerAppsEnvironmentName: containerAppsEnvironment.name
+    containerRegistryName: containerRegistry.name
+    applicationInsightsName: appInsights.name
+    openAIEndpoint: openAI.properties.endpoint
+    openAIKey: openAI.listKeys().key1
+    openAIDeploymentName: gpt4Deployment.name
+    openAIApiVersion: '2024-12-01-preview'
+  }
+}
+
+// Container App for Researcher Agent
+module researcherAgent './app/agent-researcher.bicep' = {
+  name: 'researcher-agent'
+  params: {
+    name: 'ca-researcher-${environmentName}'
+    location: location
+    tags: tags
+    containerAppsEnvironmentName: containerAppsEnvironment.name
+    containerRegistryName: containerRegistry.name
+    applicationInsightsName: appInsights.name
+    searchServiceEndpoint: 'https://${searchService.name}.search.windows.net'
+    searchServiceKey: searchService.listAdminKeys().primaryKey
+    searchIndexName: 'documents-index'
+  }
+}
+
+// Container App for Writer Agent
+module writerAgent './app/agent-writer.bicep' = {
+  name: 'writer-agent'
+  params: {
+    name: 'ca-writer-${environmentName}'
+    location: location
+    tags: tags
+    containerAppsEnvironmentName: containerAppsEnvironment.name
+    containerRegistryName: containerRegistry.name
+    applicationInsightsName: appInsights.name
+    openAIEndpoint: openAI.properties.endpoint
+    openAIKey: openAI.listKeys().key1
+    openAIDeploymentName: gpt4Deployment.name
+    openAIApiVersion: '2024-12-01-preview'
+  }
+}
+
+// Container App for Reviewer Agent
+module reviewerAgent './app/agent-reviewer.bicep' = {
+  name: 'reviewer-agent'
+  params: {
+    name: 'ca-reviewer-${environmentName}'
+    location: location
+    tags: tags
+    containerAppsEnvironmentName: containerAppsEnvironment.name
+    containerRegistryName: containerRegistry.name
+    applicationInsightsName: appInsights.name
+    openAIEndpoint: openAI.properties.endpoint
+    openAIKey: openAI.listKeys().key1
+    openAIDeploymentName: gpt4Deployment.name
+    openAIApiVersion: '2024-12-01-preview'
+  }
+}
+
+// Container App for Orchestrator API
+module api './app/api.bicep' = {
+  name: 'orchestrator-api'
+  params: {
+    name: 'ca-orchestrator-${environmentName}'
     location: location
     tags: tags
     containerAppsEnvironmentName: containerAppsEnvironment.name
@@ -335,6 +402,14 @@ module api './app/api.bicep' = {
     applicationInsightsName: appInsights.name
     storageAccountName: storageAccount.name
     searchServiceName: searchService.name
+    plannerServiceUrl: plannerAgent.outputs.uri
+    researcherServiceUrl: researcherAgent.outputs.uri
+    writerServiceUrl: writerAgent.outputs.uri
+    reviewerServiceUrl: reviewerAgent.outputs.uri
+    cosmosEndpoint: cosmosAccount.properties.documentEndpoint
+    cosmosPrimaryKey: cosmosAccount.listKeys().primaryMasterKey
+    cosmosDatabaseName: cosmosDatabase.name
+    cosmosContainerName: cosmosContainer.name
   }
 }
 
@@ -354,8 +429,6 @@ output containerRegistryEndpoint string = containerRegistry.properties.loginServ
 output logAnalyticsWorkspaceName string = logAnalytics.name
 output keyVaultName string = keyVault.name
 output aiHubName string = aiHub.name
-output apiUri string = api.outputs.uri
-output apiName string = api.outputs.name
 output openAIEndpoint string = openAI.properties.endpoint
 output openAIName string = openAI.name
 output openAIKey string = openAI.listKeys().key1
@@ -366,3 +439,21 @@ output cosmosAccountName string = cosmosAccount.name
 output cosmosPrimaryKey string = cosmosAccount.listKeys().primaryMasterKey
 output cosmosDatabaseName string = cosmosDatabase.name
 output cosmosContainerName string = cosmosContainer.name
+
+// Agent Service Outputs
+output plannerAgentUri string = plannerAgent.outputs.uri
+output plannerAgentName string = plannerAgent.outputs.name
+output plannerAgentFqdn string = plannerAgent.outputs.fqdn
+output researcherAgentUri string = researcherAgent.outputs.uri
+output researcherAgentName string = researcherAgent.outputs.name
+output researcherAgentFqdn string = researcherAgent.outputs.fqdn
+output writerAgentUri string = writerAgent.outputs.uri
+output writerAgentName string = writerAgent.outputs.name
+output writerAgentFqdn string = writerAgent.outputs.fqdn
+output reviewerAgentUri string = reviewerAgent.outputs.uri
+output reviewerAgentName string = reviewerAgent.outputs.name
+output reviewerAgentFqdn string = reviewerAgent.outputs.fqdn
+
+// Orchestrator API Outputs
+output orchestratorApiUri string = api.outputs.uri
+output orchestratorApiName string = api.outputs.name

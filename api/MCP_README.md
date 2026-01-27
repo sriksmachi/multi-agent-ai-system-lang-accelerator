@@ -297,7 +297,7 @@ curl -X POST http://localhost:8000/mcp/invoke \
 
 The MCP endpoint includes the `x-ms-agentic-protocol` extension in the OpenAPI spec:
 
-```yaml
+```
 paths:
   /mcp/invoke:
     post:
@@ -344,7 +344,7 @@ View logs in Azure Application Insights or console output.
 
 2. Run the example client:
    ```bash
-   python clients/mcp_client_example.py
+   python clients/mcp_client.py
    ```
 
 ### Manual Testing

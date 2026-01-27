@@ -33,12 +33,6 @@ import uvicorn
 from starlette.middleware.cors import CORSMiddleware
 from mcp.server.fastmcp import Context, FastMCP
 from mcp import ServerSession
-
-from api.schemas import (
-    HealthResponse,
-    ErrorResponse,
-)
-
 from workflows import configure_post_generator
 
 

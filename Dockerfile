@@ -17,7 +17,6 @@ COPY agents ./agents
 COPY core ./core
 COPY workflows ./workflows
 COPY tools ./tools
-COPY .env .env
 
 # Expose port
 EXPOSE 8000

@@ -140,7 +140,7 @@ COSMOS_CHECKPOINTS_CONTAINER=$(az deployment sub show --name multi-agent-deploym
 AZURE_SEARCH_ENDPOINT=$(az deployment sub show --name multi-agent-deployment --query properties.outputs.AZURE_SEARCH_ENDPOINT.value -o tsv)
 AZURE_SEARCH_ADMIN_KEY=$(az deployment sub show --name multi-agent-deployment --query properties.outputs.AZURE_SEARCH_ADMIN_KEY.value -o tsv)
 AZURE_SEARCH_INDEX_NAME=$(az deployment sub show --name multi-agent-deployment --query properties.outputs.AZURE_SEARCH_INDEX_NAME.value -o tsv)
-APPINSIGHTS_CONNECTION_STRING=$(az deployment sub show --name multi-agent-deployment --query properties.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING.value -o tsv)
+APPLICATIONINSIGHTS_CONNECTION_STRING=$(az deployment sub show --name multi-agent-deployment --query properties.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING.value -o tsv)
 CHECKPOINTER=cosmos
 USE_MANAGED_IDENTITY=false
 EOF

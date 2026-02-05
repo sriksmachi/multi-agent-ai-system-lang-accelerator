@@ -1,0 +1,6 @@
+# Streamlit Chat Client Dependencies
+streamlit>=1.32.0
+httpx>=0.27.0
+sseclient-py>=1.8.0
+requests>=2.31.0
+python-dotenv>=1.0.0

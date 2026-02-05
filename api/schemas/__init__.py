@@ -30,18 +30,6 @@ class ErrorResponse(BaseModel):
     detail: Optional[str] = Field(None, description="Additional error details")
 
 
-# Import MCP schemas
-from .mcp_schemas import (
-    MCPToolParameter,
-    MCPTool,
-    MCPToolsListResponse,
-    MCPMessage,
-    MCPToolCallRequest,
-    MCPToolCallResponse,
-    MCPStreamChunk,
-    MCPErrorResponse,
-)
-
 __all__ = [
     "HealthResponse",
     "ChatRequest",

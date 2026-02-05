@@ -52,6 +52,28 @@ output APPLICATIONINSIGHTS_NAME string = resources.outputs.applicationInsightsNa
 // AI Search outputs
 output AZURE_SEARCH_ENDPOINT string = resources.outputs.searchServiceEndpoint
 output AZURE_SEARCH_NAME string = resources.outputs.searchServiceName
+output AZURE_SEARCH_ADMIN_KEY string = resources.outputs.searchServiceKey
+output AZURE_SEARCH_INDEX_NAME string = 'documents-index'
+
+// Azure OpenAI outputs
+output AZURE_OPENAI_ENDPOINT string = resources.outputs.openAIEndpoint
+output AZURE_OPENAI_NAME string = resources.outputs.openAIName
+output AZURE_OPENAI_API_KEY string = resources.outputs.openAIKey
+output AZURE_OPENAI_DEPLOYMENT_NAME string = resources.outputs.openAIDeploymentName
+output AZURE_OPENAI_API_VERSION string = '2024-12-01-preview'
+output AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT string = resources.outputs.openAIEmbeddingsDeploymentName
+output AZURE_OPENAI_EMBEDDINGS_ENDPOINT string = resources.outputs.openAIEndpoint
+output AZURE_OPENAI_EMBEDDINGS_API_KEY string = resources.outputs.openAIKey
+output AZURE_OPENAI_EMBEDDINGS_API_VERSION string = '2023-05-15'
+output AZURE_DEPLOYMENT_NAME string = resources.outputs.openAIDeploymentName
+output AZURE_MODEL_NAME string = resources.outputs.openAIDeploymentName
+
+// Cosmos DB outputs
+output COSMOS_ENDPOINT string = resources.outputs.cosmosEndpoint
+output COSMOS_ACCOUNT_NAME string = resources.outputs.cosmosAccountName
+output COSMOS_PRIMARY_KEY string = resources.outputs.cosmosPrimaryKey
+output COSMOS_DATABASE_NAME string = resources.outputs.cosmosDatabaseName
+output COSMOS_CHECKPOINTS_CONTAINER string = resources.outputs.cosmosContainerName
 
 // AI Foundry outputs
 output AZURE_AI_FOUNDRY_NAME string = resources.outputs.aiFoundryName
@@ -62,9 +84,19 @@ output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = resources.outputs.containe
 output AZURE_CONTAINER_REGISTRY_NAME string = resources.outputs.containerRegistryName
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.containerRegistryEndpoint
 
-// API outputs
-output API_URI string = resources.outputs.apiUri
-output API_NAME string = resources.outputs.apiName
+// Orchestrator API outputs
+output API_URI string = resources.outputs.orchestratorApiUri
+output API_NAME string = resources.outputs.orchestratorApiName
+
+// Agent Service outputs
+output PLANNER_AGENT_URI string = resources.outputs.plannerAgentUri
+output PLANNER_AGENT_NAME string = resources.outputs.plannerAgentName
+output RESEARCHER_AGENT_URI string = resources.outputs.researcherAgentUri
+output RESEARCHER_AGENT_NAME string = resources.outputs.researcherAgentName
+output WRITER_AGENT_URI string = resources.outputs.writerAgentUri
+output WRITER_AGENT_NAME string = resources.outputs.writerAgentName
+output REVIEWER_AGENT_URI string = resources.outputs.reviewerAgentUri
+output REVIEWER_AGENT_NAME string = resources.outputs.reviewerAgentName
 
 // Additional outputs
 output AZURE_KEY_VAULT_NAME string = resources.outputs.keyVaultName

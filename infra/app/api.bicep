@@ -8,6 +8,19 @@ param applicationInsightsName string
 param storageAccountName string
 param searchServiceName string
 
+// Agent service URLs
+param plannerServiceUrl string = ''
+param researcherServiceUrl string = ''
+param writerServiceUrl string = ''
+param reviewerServiceUrl string = ''
+
+// Cosmos DB parameters
+param cosmosEndpoint string = ''
+@secure()
+param cosmosPrimaryKey string = ''
+param cosmosDatabaseName string = ''
+param cosmosContainerName string = ''
+
 param imageName string = ''
 param exists bool = false
 
@@ -65,6 +78,10 @@ resource app 'Microsoft.App/containerApps@2023-05-01' = {
           name: 'search-admin-key'
           value: searchService.listAdminKeys().primaryKey
         }
+        {
+          name: 'cosmos-primary-key'
+          value: cosmosPrimaryKey
+        }
       ]
     }
     template: {
@@ -92,6 +109,42 @@ resource app 'Microsoft.App/containerApps@2023-05-01' = {
             {
               name: 'AZURE_STORAGE_ACCOUNT_NAME'
               value: storageAccount.name
+            }
+            {
+              name: 'PLANNER_SERVICE_URL'
+              value: plannerServiceUrl
+            }
+            {
+              name: 'RESEARCHER_SERVICE_URL'
+              value: researcherServiceUrl
+            }
+            {
+              name: 'WRITER_SERVICE_URL'
+              value: writerServiceUrl
+            }
+            {
+              name: 'REVIEWER_SERVICE_URL'
+              value: reviewerServiceUrl
+            }
+            {
+              name: 'AZURE_COSMOSDB_ENDPOINT'
+              value: cosmosEndpoint
+            }
+            {
+              name: 'AZURE_COSMOSDB_KEY'
+              secretRef: 'cosmos-primary-key'
+            }
+            {
+              name: 'AZURE_COSMOSDB_DATABASE_NAME'
+              value: cosmosDatabaseName
+            }
+            {
+              name: 'AZURE_COSMOSDB_CONTAINER_NAME'
+              value: cosmosContainerName
+            }
+            {
+              name: 'ENVIRONMENT'
+              value: 'production'
             }
           ]
           resources: {

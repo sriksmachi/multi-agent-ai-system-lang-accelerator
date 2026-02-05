@@ -7,38 +7,45 @@ import os
 import logging
 from datetime import datetime
 from typing import Optional
+import json
+
 from dotenv import load_dotenv
+from pydantic import BaseModel
 
 # Load environment variables FIRST
 load_dotenv()
 
-# Configure Azure Monitor BEFORE any other imports (critical for tracing)
 from azure.monitor.opentelemetry import configure_azure_monitor
+# Configure Azure Monitor BEFORE any other initialization (critical for tracing)
 configure_azure_monitor(
-    connection_string=os.getenv("APPINSIGHTS_CONNECTION_STRING", "")
+    connection_string=os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING", "")
 )
 
 # Instrument OpenAI BEFORE importing modules that use OpenAI clients
 from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor
 OpenAIInstrumentor().instrument()
 
-# Now import FastAPI and other dependencies
-from fastapi import FastAPI, HTTPException, status
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry import trace
-from azure.core.settings import settings
-import uvicorn
 from starlette.middleware.cors import CORSMiddleware
+
+# Azure imports
+from azure.monitor.opentelemetry import configure_azure_monitor
+from azure.core.settings import settings
+
+# OpenTelemetry imports
+from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor
+from opentelemetry import trace
+
+# MCP imports
 from mcp.server.fastmcp import Context, FastMCP
 from mcp import ServerSession
 
+import uvicorn
+
+# Local imports
 from api.schemas import (
     HealthResponse,
     ErrorResponse,
 )
-
 from workflows import configure_post_generator
 
 
@@ -116,40 +123,62 @@ async def generate_linkedin_post(
 
             await ctx.report_progress(0.2, message="Workflow ready")
 
-            accumulated = ""
+            # Track intermediate results
+            result_data = {
+                "plan": "",
+                "context": "",
+                "draft": "",
+                "final_post": "",
+                "scores": {},
+                "feedback": ""
+            }
 
-            for chunk in compiled_workflow.stream(initial_state.model_dump(), config=config, stream_mode="updates"):
+            async for chunk in compiled_workflow.astream(initial_state.model_dump(), config=config, stream_mode="updates"):
                 if isinstance(chunk, dict):
                     for node_name, node_output in chunk.items():
                         if isinstance(node_output, dict):
-                            # Stream draft as it appears
+                            # Stream plan from planner
+                            if plan := node_output.get("plan"):
+                                result_data["plan"] = plan
+                                await ctx.info(f"[PLAN]{plan}[/PLAN]")
+                                await ctx.report_progress(0.3, message="Plan created")
+
+                            # Stream context from researcher
+                            if context := node_output.get("context"):
+                                result_data["context"] = context[:500] + "..." if len(context) > 500 else context
+                                await ctx.info(f"[CONTEXT]{result_data['context']}[/CONTEXT]")
+                                await ctx.report_progress(0.4, message="Research complete")
+
+                            # Stream draft from writer
                             if draft := node_output.get("draft"):
-                                new_part = draft[len(accumulated):]
-                                if new_part:
-                                    await ctx.info(new_part)  # ← This streams visible text
-                                    accumulated += new_part
-                                await ctx.report_progress(0.5, message="Drafting post...")
+                                result_data["draft"] = draft
+                                await ctx.info(f"[DRAFT]{draft}[/DRAFT]")
+                                await ctx.report_progress(0.6, message="Draft written")
+
+                            # Stream scores from reviewer
+                            if scores := node_output.get("scores"):
+                                result_data["scores"] = scores
+                                await ctx.info(f"[SCORES]{json.dumps(scores)}[/SCORES]")
+                                
+                            if feedback := node_output.get("feedback"):
+                                result_data["feedback"] = feedback
+                                await ctx.info(f"[FEEDBACK]{feedback}[/FEEDBACK]")
+                                await ctx.report_progress(0.8, message="Review complete")
 
                             # Stream final post
-                            elif final := node_output.get("final_post"):
-                                new_part = final[len(accumulated):]
-                                if new_part:
-                                    await ctx.info(new_part)  # ← Visible streaming
-                                    accumulated += new_part
-                                await ctx.report_progress(0.9, message="Finalizing...")
-
-                            # Optional: show agent messages
-                            for msg in node_output.get("messages", []):
-                                role = msg.get("role", "agent")
-                                content = msg.get("content", "")
-                                if content:
-                                    await ctx.info(f"[{role}] {content}")
+                            if final := node_output.get("final_post"):
+                                result_data["final_post"] = final
+                                await ctx.info(f"[FINAL]{final}[/FINAL]")
+                                await ctx.report_progress(0.95, message="Finalizing...")
 
             await ctx.report_progress(1.0, message="Complete!")
-            await ctx.info("Post generation finished")
+            
+            # Return final result as JSON
+            final_output = result_data.get("final_post") or result_data.get("draft") or ""
+            await ctx.info(f"[RESULT]{json.dumps(result_data)}[/RESULT]")
 
             span.set_attribute("success", True)
-            return accumulated  # Final full post
+            return final_output
 
         except Exception as e:
             await ctx.error(f"Error: {str(e)}")

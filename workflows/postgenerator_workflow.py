@@ -305,22 +305,21 @@ async def reviewer_node(state: PostGeneratorState) -> Dict[str, Any]:
         # Get orchestrator instance and call reviewer via A2A
         orchestrator = AgentOrchestrator()
         try:
-            # Call reviewer to get final post
+            # Call reviewer to get evaluation results
             reviewer_result = await orchestrator.call_reviewer(state.model_dump())
-            final_post = reviewer_result.get("final_post", "")
             
-            # For now, simulate review results based on final post quality
-            # In a real scenario, reviewer would return scores and feedback
-            scores = {"accuracy": 8, "relevance": 8, "tone": 8}
-            feedback = "Post reviewed and approved"
-            needs_refinement = False
+            # Extract actual scores and feedback from reviewer
+            scores = reviewer_result.get("scores", {"answer_relevancy": 0.5, "faithfulness": 0.5})
+            feedback = reviewer_result.get("feedback", "Evaluation completed")
+            needs_refinement = reviewer_result.get("needs_refinement", False)
+            final_post = reviewer_result.get("final_post", state.draft)
             
-            # Update state
+            # Update state with actual evaluation results
             updates = {
                 "scores": scores,
                 "feedback": feedback,
                 "needs_refinement": needs_refinement,
-                "final_post": final_post,
+                "final_post": final_post if not needs_refinement else "",  # Only set final_post if approved
                 "messages": state.messages + [{
                     "role": "reviewer",
                     "content": feedback,
@@ -427,15 +426,15 @@ def router_node(state: PostGeneratorState) -> Dict[str, Any]:
         updates = {}
         
         if not needs_refinement:
-            # Quality is acceptable
-            updates["final_post"] = state.draft
+            # Quality is acceptable - use the final_post from reviewer (or draft if not set)
+            updates["final_post"] = state.final_post if state.final_post else state.draft
             decision = "finalize"
             logger.info(
                 f"[{user_id}][{thread_id}] ROUTER: Quality acceptable, finalizing post",
                 extra={"user_id": user_id, "thread_id": thread_id, "decision": decision}
             )
         elif refinement_count >= max_refinements:
-            # Max refinements reached
+            # Max refinements reached - use current draft as final
             updates["final_post"] = state.draft
             updates["needs_refinement"] = False
             decision = "finalize (max refinements)"
@@ -449,8 +448,9 @@ def router_node(state: PostGeneratorState) -> Dict[str, Any]:
                 }
             )
         else:
-            # Needs refinement
+            # Needs refinement - increment counter and loop back to writer
             updates["refinement_count"] = refinement_count + 1
+            updates["final_post"] = ""  # Clear final_post for refinement loop
             decision = f"refine (attempt {refinement_count + 2})"
             logger.info(
                 f"[{user_id}][{thread_id}] ROUTER: Sending back for refinement (attempt {refinement_count + 2}/{max_refinements})",
@@ -458,7 +458,9 @@ def router_node(state: PostGeneratorState) -> Dict[str, Any]:
                     "user_id": user_id,
                     "thread_id": thread_id,
                     "decision": decision,
-                    "next_refinement": refinement_count + 1
+                    "next_refinement": refinement_count + 1,
+                    "scores": state.scores,
+                    "feedback": state.feedback
                 }
             )
         

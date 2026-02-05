@@ -7,13 +7,15 @@ import os
 import logging
 from datetime import datetime
 from typing import Optional
+
 from dotenv import load_dotenv
+from pydantic import BaseModel
 
 # Load environment variables FIRST
 load_dotenv()
 
-# Configure Azure Monitor BEFORE any other imports (critical for tracing)
 from azure.monitor.opentelemetry import configure_azure_monitor
+# Configure Azure Monitor BEFORE any other initialization (critical for tracing)
 configure_azure_monitor(
     connection_string=os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING", "")
 )
@@ -22,23 +24,27 @@ configure_azure_monitor(
 from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor
 OpenAIInstrumentor().instrument()
 
-# Now import FastAPI and other dependencies
-from fastapi import FastAPI, HTTPException, status
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry import trace
-from azure.core.settings import settings
-import uvicorn
 from starlette.middleware.cors import CORSMiddleware
+
+# Azure imports
+from azure.monitor.opentelemetry import configure_azure_monitor
+from azure.core.settings import settings
+
+# OpenTelemetry imports
+from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor
+from opentelemetry import trace
+
+# MCP imports
 from mcp.server.fastmcp import Context, FastMCP
 from mcp import ServerSession
 
+import uvicorn
+
+# Local imports
 from api.schemas import (
     HealthResponse,
     ErrorResponse,
 )
-
 from workflows import configure_post_generator
 
 
@@ -118,7 +124,7 @@ async def generate_linkedin_post(
 
             accumulated = ""
 
-            for chunk in compiled_workflow.stream(initial_state.model_dump(), config=config, stream_mode="updates"):
+            async for chunk in compiled_workflow.astream(initial_state.model_dump(), config=config, stream_mode="updates"):
                 if isinstance(chunk, dict):
                     for node_name, node_output in chunk.items():
                         if isinstance(node_output, dict):

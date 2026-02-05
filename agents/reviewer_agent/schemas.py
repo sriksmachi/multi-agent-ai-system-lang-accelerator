@@ -20,6 +20,9 @@ class ReviewRequest(BaseModel):
 class ReviewResponse(BaseModel):
     """Response schema for content review"""
     final_post: str = Field(..., description="Reviewed and finalized content")
+    scores: Optional[dict] = Field(default=None, description="Evaluation scores (answer_relevancy, faithfulness)")
+    feedback: Optional[str] = Field(default=None, description="Evaluation feedback and reasons")
+    needs_refinement: bool = Field(default=False, description="Whether the post needs refinement")
     review_notes: Optional[str] = Field(default=None, description="Review notes or feedback")
     agent: str = Field(default="reviewer", description="Agent identifier")
     thread_id: str = Field(..., description="Thread/conversation ID")

@@ -95,7 +95,7 @@ async def write_content(request: WriteRequest):
             }
             
             # Call writer agent
-            result = writer_agent.write_node(state)
+            result = writer_agent.write_post(state)
             
             if "draft" not in result or not result["draft"]:
                 raise HTTPException(

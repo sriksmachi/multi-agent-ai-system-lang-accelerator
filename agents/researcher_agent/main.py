@@ -92,7 +92,7 @@ async def conduct_research(request: ResearchRequest):
             }
             
             # Call researcher agent
-            result = researcher_agent.research_node(state)
+            result = researcher_agent.research(state)
             
             documents = result.get("documents", [])
             

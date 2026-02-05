@@ -11,7 +11,7 @@ class PlanRequest(BaseModel):
     user_id: str = Field(..., description="User identifier")
     topic: str = Field(..., description="Topic for the LinkedIn post")
     platform: str = Field(default="linkedin", description="Target platform")
-    tone: str = Field(default="professional", description="Desired tone")
+    tone: Optional[str] = Field(default="professional", description="Desired tone")
     thread_id: str = Field(..., description="Thread/conversation ID")
     metadata: Optional[dict] = Field(default=None, description="Additional metadata")
 

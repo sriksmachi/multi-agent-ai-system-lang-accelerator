@@ -31,7 +31,7 @@ class AgentOrchestrator:
         
         # Create async HTTP client with timeout
         self.client = httpx.AsyncClient(
-            timeout=httpx.Timeout(120.0, connect=10.0),
+            timeout=httpx.Timeout(240.0, connect=10.0),
             limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
         )
         
@@ -173,7 +173,10 @@ class AgentOrchestrator:
             span.set_attribute("topic", state.get("topic", ""))
             
             try:
-                logger.info(f"✍️ Calling Writer Agent for topic: {state.get('topic')}")
+                refinement_count = state.get("refinement_count", 0)
+                is_refinement = refinement_count > 0
+                
+                logger.info(f"✍️ Calling Writer Agent for topic: {state.get('topic')} (refinement: {is_refinement})")
                 
                 request_payload = {
                     "user_id": state.get("user_id", ""),
@@ -182,7 +185,11 @@ class AgentOrchestrator:
                     "research_documents": state.get("retrieved_docs", []),
                     "tone": state.get("tone", "professional"),
                     "platform": state.get("platform", "linkedin"),
-                    "thread_id": state.get("thread_id", "")
+                    "thread_id": state.get("thread_id", ""),
+                    # Include refinement context if this is a refinement iteration
+                    "previous_draft": state.get("draft", "") if is_refinement else None,
+                    "feedback": state.get("feedback", "") if is_refinement else None,
+                    "refinement_count": refinement_count
                 }
                 
                 response = await self.client.post(
@@ -203,6 +210,7 @@ class AgentOrchestrator:
                     "messages": state.get("messages", []) + [{
                         "role": "writer",
                         "content": result.get("draft", ""),
+                        "refinement_count": refinement_count,
                         "timestamp": datetime.utcnow().isoformat()
                     }]
                 }
@@ -257,9 +265,14 @@ class AgentOrchestrator:
                 
                 return {
                     "final_post": result.get("final_post", ""),
+                    "scores": result.get("scores", {}),
+                    "feedback": result.get("feedback", ""),
+                    "needs_refinement": result.get("needs_refinement", False),
                     "messages": state.get("messages", []) + [{
                         "role": "reviewer",
                         "content": result.get("final_post", ""),
+                        "scores": result.get("scores", {}),
+                        "feedback": result.get("feedback", ""),
                         "timestamp": datetime.utcnow().isoformat()
                     }]
                 }

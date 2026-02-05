@@ -93,7 +93,7 @@ async def create_plan(request: PlanRequest):
             }
             
             # Call planner agent
-            result = planner_agent.plan_node(state)
+            result = planner_agent.create_plan(state)
             
             if "plan" not in result or not result["plan"]:
                 raise HTTPException(

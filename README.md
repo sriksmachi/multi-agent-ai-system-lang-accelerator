@@ -70,6 +70,8 @@ This accelerator serves as a **template and reference implementation** for teams
 - ✅ Support independent agent scaling and fault isolation
 - ✅ Include comprehensive observability and logging
 
+
+
 ### Use Case: Social Media Content Generation
 
 The default implementation generates LinkedIn posts through coordinated agent collaboration:
@@ -231,39 +233,105 @@ response = httpx.post(
 print(response.json())
 ```
 
+### Debugging with MCP Inspector
+
+The [MCP Inspector](https://github.com/modelcontextprotocol/inspector) is an interactive developer tool for testing and debugging MCP servers. It provides a visual interface for exploring tools, resources, and prompts exposed by the orchestrator.
+
+#### Installation
+
+The Inspector runs directly through `npx` without requiring installation:
+
+```powershell
+npx @modelcontextprotocol/inspector
+```
+
+#### Connecting to the Orchestrator
+
+1. **Start the services** (if not already running):
+   ```powershell
+   docker-compose up --build
+   ```
+
+2. **Launch MCP Inspector** pointing to your MCP endpoint:
+   ```powershell
+   # For SSE transport (default for this project)
+   npx @modelcontextprotocol/inspector
+   ```
+
+3. **Configure the connection** in the Inspector UI:
+   - **Transport Type**: SSE (Server-Sent Events)
+   - **URL**: `http://localhost:8000/mcp/sse`
+
+#### Inspector Features
+
+| Tab | Description |
+|-----|-------------|
+| **Tools** | Lists available MCP tools (`generate_linkedin_post`, etc.), shows schemas, and allows testing with custom inputs |
+| **Resources** | Displays available resources and their metadata |
+| **Prompts** | Shows prompt templates and enables testing with custom arguments |
+| **Notifications** | Displays server logs and notifications in real-time |
+
+#### Development Workflow
+
+1. **Start Development** - Launch Inspector and verify connectivity
+2. **Iterative Testing** - Make server changes, rebuild (`docker-compose up --build`), reconnect Inspector
+3. **Test Edge Cases** - Verify error handling with invalid inputs and missing arguments
+
+#### Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| Connection refused | Ensure services are running: `docker ps` |
+| Tools not appearing | Check orchestrator logs: `docker-compose logs orchestrator` |
+| Timeout errors | Verify Azure OpenAI connectivity and API keys |
+
+For more debugging strategies, see the [MCP Debugging Guide](https://modelcontextprotocol.io/legacy/tools/debugging).
+
 ---
 
 ## 5. Design
 
 ### System Architecture Diagram
 
-<!-- TODO: Insert system architecture diagram here -->
-
 ```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                              Client Applications                              │
-│                    (Web UI, CLI, Copilot Studio, etc.)                        │
-└───────────────────────────────────┬──────────────────────────────────────────┘
-                                    │ HTTP/MCP Protocol
-                                    ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                        Orchestrator API (Port 8000)                           │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────────┐   │
-│  │  FastMCP Server │  │  LangGraph      │  │  Cosmos DB Checkpointer     │   │
-│  │  /mcp/*         │  │  Workflow       │  │  (State Persistence)         │   │
-│  └─────────────────┘  └─────────────────┘  └─────────────────────────────┘   │
-└───────────────────────────────────┬──────────────────────────────────────────┘
-                                    │ A2A Protocol (HTTP)
-         ┌──────────────────────────┼──────────────────────────┐
-         │                          │                          │
-         ▼                          ▼                          ▼
-┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
-│  Planner Agent  │  │ Researcher Agent│  │  Writer Agent   │  │ Reviewer Agent  │
-│    (8001)       │  │    (8002)       │  │    (8003)       │  │    (8004)       │
-│                 │  │                 │  │                 │  │                 │
-│ Azure OpenAI    │  │ Azure AI Search │  │ Azure OpenAI    │  │ DeepEval        │
-│ GPT-4o          │  │ Vector Search   │  │ GPT-4o          │  │ + Azure OpenAI  │
-└─────────────────┘  └─────────────────┘  └─────────────────┘  └─────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   Client Applications                                    │
+│                         (Web UI, CLI, Copilot Studio, MCP Inspector)                     │
+└────────────────────────────────────────┬────────────────────────────────────────────────┘
+                                         │
+                                         │ HTTP/MCP Protocol (SSE)
+                                         ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                              Orchestrator API (Port 8000)                                │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  ┌─────────────────┐  │
+│  │   FastMCP Server │  │     LangGraph    │  │   Cosmos DB      │  │  Application    │  │
+│  │   /mcp/sse       │  │     Workflow     │  │   Checkpointer   │  │  Insights       │  │
+│  │   /mcp/tools     │  │   Orchestration  │  │   (State Mgmt)   │  │  (Telemetry)    │  │
+│  └──────────────────┘  └──────────────────┘  └──────────────────┘  └─────────────────┘  │
+└────────────────────────────────────────┬────────────────────────────────────────────────┘
+                                         │
+                                         │ A2A Protocol (HTTP/REST)
+                                         │
+         ┌───────────────┬───────────────┼───────────────┬───────────────┐
+         │               │               │               │               │
+         ▼               ▼               ▼               ▼               ▼
+┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+│   Planner   │  │ Researcher  │  │   Writer    │  │  Reviewer   │  │   Azure     │
+│   Agent     │  │   Agent     │  │   Agent     │  │   Agent     │  │  Services   │
+│  (8001)     │  │  (8002)     │  │  (8003)     │  │  (8004)     │  │             │
+├─────────────┤  ├─────────────┤  ├─────────────┤  ├─────────────┤  ├─────────────┤
+│ • Content   │  │ • Vector    │  │ • Draft     │  │ • Quality   │  │ • OpenAI    │
+│   Strategy  │  │   Search    │  │   Creation  │  │   Eval      │  │ • AI Search │
+│ • Outline   │  │ • RAG       │  │ • Refine    │  │ • DeepEval  │  │ • Cosmos DB │
+│   Creation  │  │   Context   │  │   Content   │  │   Metrics   │  │ • Doc Intel │
+└──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └─────────────┘
+       │                │                │                │
+       │                │                │                │
+       ▼                ▼                ▼                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                    Azure OpenAI                                          │
+│                              (GPT-4o / GPT-5 Models)                                     │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Workflow Orchestration

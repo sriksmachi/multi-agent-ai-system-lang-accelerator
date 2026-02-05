@@ -94,7 +94,7 @@ async def review_content(request: ReviewRequest):
             }
             
             # Call reviewer agent
-            result = reviewer_agent.review_node(state)
+            result = reviewer_agent.review_post(state)
             
             if "final_post" not in result or not result["final_post"]:
                 raise HTTPException(
@@ -106,6 +106,9 @@ async def review_content(request: ReviewRequest):
             
             return ReviewResponse(
                 final_post=result["final_post"],
+                scores=result.get("scores"),
+                feedback=result.get("feedback"),
+                needs_refinement=result.get("needs_refinement", False),
                 thread_id=request.thread_id,
                 status="success"
             )
@@ -115,7 +118,7 @@ async def review_content(request: ReviewRequest):
             span.set_attribute("error", True)
             span.set_attribute("error.message", str(e))
             raise HTTPException(
-                status_code=500,
+                status_code=200, # we return 200 to avoid retry loops in the workflow, making review optional. 
                 detail=f"Error reviewing content: {str(e)}"
             )
 

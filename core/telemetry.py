@@ -109,7 +109,50 @@ Note: With automatic instrumentation, you get GenAI-compliant tracing without
 writing custom wrapper functions!
 """
 
-# This file now serves as reference documentation only.
+import os
+import logging
+from azure.monitor.opentelemetry import configure_azure_monitor
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.resources import Resource
+
+
+def _suppress_azure_sdk_logging() -> None:
+    """Suppress verbose Azure SDK telemetry logging."""
+    logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
+    logging.getLogger("azure.monitor.opentelemetry.exporter.export._base").setLevel(logging.WARNING)
+    logging.getLogger("azure.monitor.opentelemetry.exporter").setLevel(logging.WARNING)
+    logging.getLogger("azure.core").setLevel(logging.WARNING)
+
+
+def setup_telemetry(service_name: str) -> None:
+    """
+    Initialize OpenTelemetry with Azure Monitor integration.
+    
+    Args:
+        service_name: The name of the service for telemetry identification.
+    """
+    # Get connection string from environment
+    connection_string = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
+    
+    if connection_string:
+        # Configure Azure Monitor with the connection string
+        configure_azure_monitor(
+            connection_string=connection_string,
+            service_name=service_name,
+        )
+        # Suppress verbose Azure SDK logging after configuration
+        _suppress_azure_sdk_logging()
+        print(f"✅ Telemetry configured for {service_name} with Azure Monitor")
+    else:
+        # Set up basic tracing without Azure Monitor
+        resource = Resource.create({"service.name": service_name})
+        provider = TracerProvider(resource=resource)
+        trace.set_tracer_provider(provider)
+        print(f"⚠️ APPLICATIONINSIGHTS_CONNECTION_STRING not set, using basic tracing for {service_name}")
+
+
+# This file provides both the setup_telemetry function and reference documentation.
 # All actual tracing is handled by:
 # 1. opentelemetry-instrumentation-openai-v2 (for OpenAI calls)
 # 2. opentelemetry-instrumentation-fastapi (for FastAPI endpoints)

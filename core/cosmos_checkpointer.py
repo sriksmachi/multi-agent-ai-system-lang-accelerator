@@ -152,6 +152,7 @@ class CosmosDBCheckpointer(BaseCheckpointSaver):
         self.container_name = os.getenv("COSMOS_CHECKPOINTS_CONTAINER", "chat-history")
         self.use_managed_identity = os.getenv("USE_MANAGED_IDENTITY", "false").lower() == "true"
         self.ttl_seconds = int(os.getenv("SESSION_TTL_SECONDS", "5184000"))  # 60 days
+        self.cosmos_key = os.getenv("COSMOS_KEY")  # Optional if using managed identity
 
         self.client = None
         self.database = None
@@ -192,8 +193,7 @@ class CosmosDBCheckpointer(BaseCheckpointSaver):
                 self.client = CosmosClient(self.endpoint, credential=credential)
             else:
                 logger.info("Connecting to Cosmos DB with key based credentials")
-                credential = AzureCliCredential()
-                self.client = CosmosClient(self.endpoint, credential=credential)
+                self.client = CosmosClient(self.endpoint, credential=self.cosmos_key)
 
             self.database = self.client.get_database_client(self.database_name)
             self.container = self.database.get_container_client(self.container_name)

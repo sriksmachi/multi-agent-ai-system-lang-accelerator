@@ -1,53 +1,56 @@
-# MCP Client
+# MCP Client & Streamlit UI
 
-Console client for the Multi-Agent LinkedIn Post Generator FastMCP server.
+Clients for the Multi-Agent LinkedIn Post Generator.
 
-Built using the official [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) with Streamable HTTP transport.
+## Available Clients
 
-## Features
+### 1. Streamlit Chat Interface (`streamlit_app.py`)
 
-✅ **Real-time Streaming** - See content generation progress in real-time  
-✅ **Progress Tracking** - Visual progress updates during generation  
-✅ **Notification Logging** - Receive intermediate updates from each agent (planner, researcher, writer, reviewer)  
-✅ **Tool Discovery** - Automatically lists available MCP tools  
-✅ **Session Management** - Handles connection lifecycle and session IDs  
+A modern chat-based UI for generating content with real-time progress updates.
 
-## Quick Start
+#### Features
 
-### Prerequisites
+✅ **Chat Interface** - Conversational UI for content generation  
+✅ **Real-time Progress** - Visual progress bar showing workflow stages  
+✅ **Agent Status** - See which agent is currently working  
+✅ **Chat History** - Maintains conversation history in session  
+✅ **Health Monitoring** - Shows orchestrator connection status  
 
-Ensure the FastMCP server is running:
-```bash
-python api/main.py
-```
-
-The server will start at `http://localhost:8000` with MCP endpoint at `/mcp`.
-
-### Run the Client
+#### Quick Start
 
 ```bash
-cd clients
-python mcp_client.py
+# Install dependencies
+pip install -r clients/requirements.txt
+
+# Ensure orchestrator is running
+docker-compose up -d
+
+# Run Streamlit app
+streamlit run clients/streamlit_app.py
 ```
 
-### Example Output
+The app will open at `http://localhost:8501`
+
+#### Screenshot
 
 ```
-Initialized connection
-Available tools:
- - generate_linkedin_post_streaming: Generate a professional LinkedIn post with real-time streaming updates.
- - greet: Greet someone by name.
+┌─────────────────────────────────────────────────────────┐
+│  🤖 Multi-Agent Content Generator                       │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  👤 User: Generate a post about AI in healthcare        │
+│                                                         │
+│  🎯 Planning... ████████░░░░░░░░░░░░ 40%               │
+│                                                         │
+│  🤖 Assistant:                                          │
+│  🚀 Healthcare is being transformed by AI...            │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
 
-Calling tool: generate_linkedin_post_streaming
+---
 
-🔔 Notification received:
-========================================
-Notification: Starting generation for: mango global supply chain
-
-Progress: 20% - Workflow ready
-🔔 Notification received:
-========================================
-Notification: [planner] Here is a clear, LinkedIn‑appropriate ou...
+### 2. MCP Console Client (`mcp_client.py`)
 
 Progress: 50% - Drafting post...
 🔔 Notification received:

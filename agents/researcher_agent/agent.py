@@ -87,7 +87,7 @@ class ResearcherAgent:
             except Exception as e:
                 span.set_status(Status(StatusCode.ERROR, str(e)))
                 span.record_exception(e)
-                print(f"⚠️  Warning: Azure AI Search failed: {e}")
+                logger.warning(f"Azure AI Search failed: {e}")
                 logger.error(f"Azure AI Search failed: {e}", exc_info=True)
                 return []
     
@@ -136,7 +136,7 @@ class ResearcherAgent:
         topic = state.get("topic", "")
         plan = state.get("plan", "")
         
-        print(f"🔬 RESEARCHER: Retrieving context based on plan...")
+        logger.info(f"🔬 RESEARCHER: Retrieving context based on plan...")
         
         # Log input
         logger.info(
@@ -152,11 +152,11 @@ class ResearcherAgent:
         
         # Search for relevant context based on topic and plan
         # Use topic as primary search query
-        print(f"   🔍 Searching Azure AI Search for: {topic}")
+        logger.info(f"🔍 Searching Azure AI Search for: {topic}")
         retrieved_docs = self.search_context(topic, top_k=5)
         context_text = self.format_context(retrieved_docs)
         
-        print(f"✅ Retrieved {len(retrieved_docs)} documents")
+        logger.info(f"✅ Retrieved {len(retrieved_docs)} documents")
         
         # Add to span
         current_span = trace.get_current_span()

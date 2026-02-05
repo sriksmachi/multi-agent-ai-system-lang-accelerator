@@ -84,9 +84,19 @@ output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = resources.outputs.containe
 output AZURE_CONTAINER_REGISTRY_NAME string = resources.outputs.containerRegistryName
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.containerRegistryEndpoint
 
-// API outputs
-output API_URI string = resources.outputs.apiUri
-output API_NAME string = resources.outputs.apiName
+// Orchestrator API outputs
+output API_URI string = resources.outputs.orchestratorApiUri
+output API_NAME string = resources.outputs.orchestratorApiName
+
+// Agent Service outputs
+output PLANNER_AGENT_URI string = resources.outputs.plannerAgentUri
+output PLANNER_AGENT_NAME string = resources.outputs.plannerAgentName
+output RESEARCHER_AGENT_URI string = resources.outputs.researcherAgentUri
+output RESEARCHER_AGENT_NAME string = resources.outputs.researcherAgentName
+output WRITER_AGENT_URI string = resources.outputs.writerAgentUri
+output WRITER_AGENT_NAME string = resources.outputs.writerAgentName
+output REVIEWER_AGENT_URI string = resources.outputs.reviewerAgentUri
+output REVIEWER_AGENT_NAME string = resources.outputs.reviewerAgentName
 
 // Additional outputs
 output AZURE_KEY_VAULT_NAME string = resources.outputs.keyVaultName

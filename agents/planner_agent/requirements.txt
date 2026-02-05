@@ -1,0 +1,46 @@
+# Azure services
+azure-ai-documentintelligence
+azure-core
+azure-cosmos
+azure-identity
+azure-search-documents
+azure-monitor-opentelemetry==1.8.3
+
+# Web framework
+fastapi
+uvicorn
+httpx
+
+# AI/LLM
+openai
+langchain
+langchain-core
+langchain-openai
+langgraph
+langgraph-checkpoint
+langchain_text_splitters
+
+# Multi-agent and evaluation
+deepeval
+
+# MCP protocol
+fastmcp==2.14.2
+mcp
+
+# Data models
+pydantic
+
+# OpenTelemetry
+opentelemetry-api==1.39.0
+opentelemetry-sdk==1.39.0
+opentelemetry-semantic-conventions==00.60b0
+opentelemetry-instrumentation==00.60b0
+opentelemetry-instrumentation-fastapi==0.60b0
+opentelemetry-instrumentation-openai-v2
+opentelemetry-util-http==0.60b0
+
+# Testing
+pytest
+
+# For test client only
+requests

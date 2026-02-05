@@ -15,6 +15,119 @@
                 "--reload"
             ],
             "jinja": true
+        },
+        {
+            "name": "Debug Orchestrator API",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+            "args": [
+                "api.main:starlette_app",
+                "--host", "0.0.0.0",
+                "--port", "8000",
+                "--reload"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "ENVIRONMENT": "development"
+            },
+            "envFile": "${workspaceFolder}/.env",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Debug Planner Agent",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+            "args": [
+                "agents.planner_agent.main:app",
+                "--host", "0.0.0.0",
+                "--port", "8001",
+                "--reload"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "ENVIRONMENT": "development"
+            },
+            "envFile": "${workspaceFolder}/.env",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Debug Researcher Agent",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+            "args": [
+                "agents.researcher_agent.main:app",
+                "--host", "0.0.0.0",
+                "--port", "8002",
+                "--reload"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "ENVIRONMENT": "development"
+            },
+            "envFile": "${workspaceFolder}/.env",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Debug Writer Agent",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+            "args": [
+                "agents.writer_agent.main:app",
+                "--host", "0.0.0.0",
+                "--port", "8003",
+                "--reload"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "ENVIRONMENT": "development"
+            },
+            "envFile": "${workspaceFolder}/.env",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Debug Reviewer Agent",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+            "args": [
+                "agents.reviewer_agent.main:app",
+                "--host", "0.0.0.0",
+                "--port", "8004",
+                "--reload"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "ENVIRONMENT": "development"
+            },
+            "envFile": "${workspaceFolder}/.env",
+            "console": "integratedTerminal"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Debug All Agents",
+            "configurations": [
+                "Debug Orchestrator API",
+                "Debug Planner Agent",
+                "Debug Researcher Agent",
+                "Debug Writer Agent",
+                "Debug Reviewer Agent"
+            ],
+            "stopAll": true
         }
     ]
 }

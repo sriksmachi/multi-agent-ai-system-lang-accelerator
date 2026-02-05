@@ -9,8 +9,12 @@ This agent:
 """
 
 import os
+import sys
 from typing import Dict, Any, Optional
 from pathlib import Path
+
+# Add parent directory to path for imports when running directly
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from langchain_core.runnables import RunnableConfig
 from opentelemetry import trace
@@ -80,13 +84,17 @@ class ReviewerAgent:
             
             feedback: str = ""
             
+            # Ensure retrieval_context is not None (required by Faithfulness metric)
+            # Use the plan as fallback context if no research context is available
+            retrieval_ctx = [self.context] if self.context else [self.plan or self.topic]
+            
             # Create test case
             test_case = LLMTestCase(
                 input=self.topic,
                 actual_output=self.draft,
                 expected_output=self.plan,
-                context=[self.context] if self.context else None,
-                retrieval_context=[self.context] if self.context else None
+                context=retrieval_ctx,
+                retrieval_context=retrieval_ctx
             )
             
             # Initialize metrics
@@ -243,7 +251,7 @@ class ReviewerAgent:
             state["scores"] = scores
             state["feedback"] = feedback
             state["needs_refinement"] = needs_refinement
-            
+            state["final_post"] = self.draft  # In this case, we return the original draft as final
             return state
 
 

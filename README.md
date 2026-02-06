@@ -200,9 +200,17 @@ curl http://localhost:8000/health
 | http://localhost:8000/health | Orchestrator health check |
 | http://localhost:8000/mcp/tools | List available MCP tools |
 | http://localhost:8001/health | Planner Agent health |
+| http://localhost:8001/.well-known/agent.json | Planner A2A Agent Card |
 | http://localhost:8002/health | Researcher Agent health |
+| http://localhost:8002/.well-known/agent.json | Researcher A2A Agent Card |
 | http://localhost:8003/health | Writer Agent health |
+| http://localhost:8003/.well-known/agent.json | Writer A2A Agent Card |
 | http://localhost:8004/health | Reviewer Agent health |
+| http://localhost:8004/.well-known/agent.json | Reviewer A2A Agent Card |
+| http://localhost:8005/health | Supervisor Agent health |
+| http://localhost:8005/.well-known/agent.json | Supervisor A2A Agent Card |
+| http://localhost:8005/agents | List discovered A2A agents |
+| http://localhost:8005/generate | A2A-based post generation |
 
 ### Using the MCP Client
 
@@ -211,18 +219,28 @@ curl http://localhost:8000/health
 python clients/mcp_client.py
 ```
 
+### Available MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `generate_linkedin_post_stream` | Generate a post using LangGraph workflow with streaming progress updates |
+| `generate_linkedin_post_sync` | Generate a post using Supervisor Agent (A2A) - no streaming, returns final result |
+| `discover_agents` | Discover all A2A agents and their capabilities |
+| `get_agent_card` | Get the Agent Card for a specific agent |
+| `greet` | Simple test tool |
+
 ### API Usage Example
 
 ```python
 import httpx
 
-# Generate a LinkedIn post
+# Generate a LinkedIn post (streaming via LangGraph)
 response = httpx.post(
     "http://localhost:8000/mcp/tools/call",
     json={
         "method": "tools/call",
         "params": {
-            "name": "generate_linkedin_post",
+            "name": "generate_linkedin_post_stream",
             "arguments": {
                 "topic": "The future of AI in healthcare",
                 "user_id": "user123"
@@ -230,6 +248,36 @@ response = httpx.post(
         }
     }
 )
+
+# Generate a LinkedIn post (sync via Supervisor Agent)
+response = httpx.post(
+    "http://localhost:8000/mcp/tools/call",
+    json={
+        "method": "tools/call",
+        "params": {
+            "name": "generate_linkedin_post_sync",
+            "arguments": {
+                "topic": "The future of AI in healthcare",
+                "user_id": "user123",
+                "platform": "LinkedIn",
+                "tone": "professional"
+            }
+        }
+    }
+)
+
+# Discover all A2A agents
+response = httpx.post(
+    "http://localhost:8000/mcp/tools/call",
+    json={
+        "method": "tools/call",
+        "params": {
+            "name": "discover_agents",
+            "arguments": {}
+        }
+    }
+)
+print(response.json())  # Returns all discovered agents with skills
 print(response.json())
 ```
 
@@ -324,10 +372,24 @@ For more debugging strategies, see the [MCP Debugging Guide](https://modelcontex
 │   Strategy  │  │   Search    │  │   Creation  │  │   Eval      │  │ • AI Search │
 │ • Outline   │  │ • RAG       │  │ • Refine    │  │ • DeepEval  │  │ • Cosmos DB │
 │   Creation  │  │   Context   │  │   Content   │  │   Metrics   │  │ • Doc Intel │
+│ • A2A Card  │  │ • A2A Card  │  │ • A2A Card  │  │ • A2A Card  │  │             │
 └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └─────────────┘
        │                │                │                │
-       │                │                │                │
-       ▼                ▼                ▼                ▼
+       │      ┌─────────┴────────────────┴────────────────┘
+       │      │         A2A Discovery & Communication
+       │      ▼
+       │  ┌─────────────┐
+       │  │ Supervisor  │
+       │  │   Agent     │
+       │  │  (8005)     │
+       │  ├─────────────┤
+       │  │ • A2A       │
+       │  │   Discovery │
+       │  │ • Workflow  │
+       │  │   Orchestr. │
+       │  └─────────────┘
+       │                
+       ▼                
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
 │                                    Azure OpenAI                                          │
 │                              (GPT-4o / GPT-5 Models)                                     │
@@ -361,7 +423,8 @@ The system uses LangGraph to orchestrate a sequential workflow:
 
 | Agent | Port | Role | Responsibilities | Azure Services Used |
 |-------|------|------|------------------|---------------------|
-| **Orchestrator** | 8000 | Coordinator | Exposes MCP endpoints, manages workflow state, routes requests to agents | Cosmos DB (checkpointing), Application Insights |
+| **Orchestrator** | 8000 | MCP Coordinator | Exposes MCP endpoints, manages workflow state, routes requests to agents | Cosmos DB (checkpointing), Application Insights |
+| **Supervisor** | 8005 | A2A Orchestrator | Discovers agents via A2A, orchestrates workflow using Agent Cards | Application Insights |
 | **Planner** | 8001 | Strategist | Analyzes topic, creates structured outline, identifies key points and research needs | Azure OpenAI (GPT-4o) |
 | **Researcher** | 8002 | Information Gatherer | Searches knowledge base, retrieves relevant context using vector search | Azure AI Search (vector + semantic) |
 | **Writer** | 8003 | Content Creator | Generates platform-specific content based on plan and research, handles refinements | Azure OpenAI (GPT-4o) |
@@ -369,7 +432,88 @@ The system uses LangGraph to orchestrate a sequential workflow:
 
 ### A2A Protocol
 
-All inter-agent communication uses a standardized A2A (Agent-to-Agent) protocol:
+All inter-agent communication uses a standardized A2A (Agent-to-Agent) protocol with dynamic discovery:
+
+#### Agent Discovery
+
+Each agent exposes its capabilities via the standard `/.well-known/agent.json` endpoint (Agent Card):
+
+```python
+# Discover an agent's capabilities
+import httpx
+
+# Get Agent Card
+response = httpx.get("http://localhost:8001/.well-known/agent.json")
+agent_card = response.json()
+
+print(f"Agent: {agent_card['name']}")
+print(f"Skills: {[s['name'] for s in agent_card['skills']]}")
+print(f"Endpoints: {agent_card['endpoints']}")
+```
+
+#### Agent Card Format
+
+```json
+{
+    "name": "Planner Agent",
+    "description": "Content planning agent for multi-agent LinkedIn post generation",
+    "version": "1.0.0",
+    "protocol": "a2a",
+    "capabilities": {
+        "streaming": false,
+        "pushNotifications": false
+    },
+    "skills": [
+        {
+            "name": "plan",
+            "description": "Generate a content plan for a LinkedIn post",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "topic": {"type": "string"},
+                    "thread_id": {"type": "string"}
+                },
+                "required": ["topic", "thread_id"]
+            }
+        }
+    ],
+    "endpoints": {
+        "plan": "/plan",
+        "health": "/health"
+    }
+}
+```
+
+#### Direct Agent-to-Agent Communication
+
+Agents can communicate directly without going through a supervisor:
+
+```python
+from core.a2a_client import A2AClient, get_agent_url
+
+async def example_a2a_call():
+    client = A2AClient()
+    
+    # Discover the reviewer agent
+    reviewer_url = get_agent_url("reviewer")
+    agent_card = await client.discover_agent(reviewer_url)
+    
+    # Call the review skill directly
+    result = await client.call_skill(
+        agent_base_url=reviewer_url,
+        skill_name="review",
+        payload={
+            "topic": "AI in healthcare",
+            "draft": "Your draft content here...",
+            "thread_id": "unique-thread-id"
+        }
+    )
+    
+    await client.close()
+    return result
+```
+
+#### Request Format
 
 ```python
 # Request Format
@@ -398,6 +542,54 @@ All inter-agent communication uses a standardized A2A (Agent-to-Agent) protocol:
 }
 ```
 
+#### Using the Supervisor Agent (A2A Orchestrator)
+
+The Supervisor Agent at port 8005 orchestrates the full workflow using A2A protocol:
+
+```python
+import httpx
+
+# Generate a post using A2A-based supervisor
+response = httpx.post(
+    "http://localhost:8005/generate",
+    json={
+        "topic": "The future of AI in healthcare",
+        "platform": "LinkedIn",
+        "tone": "professional",
+        "user_id": "user123",
+        "thread_id": "workflow-123"
+    }
+)
+
+result = response.json()
+print(f"Final content: {result['final_content']}")
+print(f"Workflow status: {result['workflow_status']}")
+```
+
+#### List Discovered Agents
+
+```bash
+curl http://localhost:8005/agents
+```
+
+Returns information about all agents discovered via A2A:
+
+```json
+{
+    "discovered_agents": {
+        "planner": {
+            "name": "Planner Agent",
+            "description": "Content planning agent...",
+            "version": "1.0.0",
+            "skills": ["plan"],
+            "healthy": true,
+            "url": "http://planner:8001"
+        }
+    },
+    "total_count": 4
+}
+```
+
 ### Key Design Principles
 
 1. **Independent Scaling** - Each agent can scale independently (1-10 replicas)
@@ -405,6 +597,53 @@ All inter-agent communication uses a standardized A2A (Agent-to-Agent) protocol:
 3. **Technology Flexibility** - Agents can use different models/providers
 4. **Observability** - Full distributed tracing via OpenTelemetry
 5. **Idempotency** - State persistence enables workflow recovery
+6. **Dynamic Discovery** - Agents are discovered at runtime via A2A protocol
+
+### Workflow Integration with A2A
+
+The `AgentOrchestrator` class in the workflow integrates A2A discovery with LangGraph orchestration:
+
+```python
+from workflows import AgentOrchestrator
+
+# Initialize with A2A discovery enabled (default)
+orchestrator = AgentOrchestrator(use_a2a_discovery=True)
+
+# Discover all agents on startup
+await orchestrator.discover_all_agents()
+
+# Call agents - endpoints are resolved dynamically from Agent Cards
+result = await orchestrator.call_planner(state)
+
+# Get discovered agent information
+agents = orchestrator.get_discovered_agents()
+for name, card in agents.items():
+    print(f"{card.name}: {[s.get('name') for s in card.skills]}")
+
+await orchestrator.close()
+```
+
+#### How Discovery Works in the Workflow
+
+1. **First call to any agent** triggers automatic discovery via `/.well-known/agent.json`
+2. **Agent Card is cached** to avoid repeated HTTP calls
+3. **Endpoints are resolved dynamically** from the Agent Card (e.g., `plan` → `/plan`)
+4. **Graceful fallback** to hardcoded endpoints if discovery fails
+
+#### MCP Tools for A2A
+
+The orchestrator API exposes two MCP tools for A2A discovery:
+
+| Tool | Description |
+|------|-------------|
+| `discover_agents` | Discover all agents and return their capabilities |
+| `get_agent_card` | Get the full Agent Card for a specific agent |
+
+```python
+# Via MCP client or Inspector
+await discover_agents()  # Returns all discovered agents
+await get_agent_card(agent_name="planner")  # Returns Planner's Agent Card
+```
 
 ---
 

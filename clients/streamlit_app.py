@@ -126,9 +126,9 @@ async def call_mcp_tool(topic: str, user_id: str, progress_queue: queue.Queue, n
                 
                 progress_queue.put(("progress", "Starting content generation...", 0.2))
                 
-                # Call the generate tool with progress callback
+                # Call the streaming generate tool with progress callback
                 result = await session.call_tool(
-                    "generate_linkedin_post",
+                    "generate_linkedin_post_stream",
                     arguments={
                         "topic": topic,
                         "user_id": user_id

@@ -110,7 +110,49 @@ services:
       start_period: 40s
     restart: unless-stopped
 
-  # Orchestrator API Service
+  # Supervisor Agent Service (A2A Orchestrator)
+  supervisor:
+    build:
+      context: .
+      dockerfile: agents/supervisor/Dockerfile
+    container_name: supervisor-agent
+    ports:
+      - "8005:8005"
+    environment:
+      # A2A Agent URLs (internal Docker network)
+      - PLANNER_AGENT_URL=http://planner:8001
+      - RESEARCHER_AGENT_URL=http://researcher:8002
+      - WRITER_AGENT_URL=http://writer:8003
+      - REVIEWER_AGENT_URL=http://reviewer:8004
+      # Azure Services
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_DEPLOYMENT_NAME=${AZURE_OPENAI_DEPLOYMENT_NAME}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION:-2024-12-01-preview}
+      - APPLICATIONINSIGHTS_CONNECTION_STRING=${APPLICATIONINSIGHTS_CONNECTION_STRING}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - AGENT_NAME=supervisor
+      - AGENT_PORT=8005
+    depends_on:
+      planner:
+        condition: service_healthy
+      researcher:
+        condition: service_healthy
+      writer:
+        condition: service_healthy
+      reviewer:
+        condition: service_healthy
+    networks:
+      - agent-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  # Orchestrator API Service (MCP + LangGraph)
   orchestrator:
     build:
       context: .
@@ -124,6 +166,13 @@ services:
       - RESEARCHER_SERVICE_URL=http://researcher:8002
       - WRITER_SERVICE_URL=http://writer:8003
       - REVIEWER_SERVICE_URL=http://reviewer:8004
+      - SUPERVISOR_SERVICE_URL=http://supervisor:8005
+      # A2A Agent URLs
+      - PLANNER_AGENT_URL=http://planner:8001
+      - RESEARCHER_AGENT_URL=http://researcher:8002
+      - WRITER_AGENT_URL=http://writer:8003
+      - REVIEWER_AGENT_URL=http://reviewer:8004
+      - SUPERVISOR_AGENT_URL=http://supervisor:8005
       # Azure Services
       - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
       - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}

@@ -8,7 +8,9 @@ import logging
 from datetime import datetime
 from typing import Optional
 import json
+import uuid
 
+import httpx
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
@@ -46,7 +48,7 @@ from api.schemas import (
     HealthResponse,
     ErrorResponse,
 )
-from workflows import configure_post_generator
+from workflows import configure_post_generator, AgentOrchestrator
 
 
 # Configure logging to console FIRST - force configuration
@@ -96,13 +98,14 @@ starlette_app = CORSMiddleware(
 )
 
 @mcp.tool()
-async def generate_linkedin_post(
+async def generate_linkedin_post_stream(
     topic: str,
     ctx: Context[ServerSession, None],
     user_id: Optional[str] = None,
-) -> str:  # Keep return type str
+) -> str:
     """
     Generate a professional LinkedIn post with real-time streaming updates.
+    Uses LangGraph workflow with A2A agent discovery.
     """
     if not user_id:
         user_id = f"mcp-user-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -186,6 +189,60 @@ async def generate_linkedin_post(
             raise
         
 @mcp.tool()
+async def generate_linkedin_post_sync(
+    topic: str,
+    user_id: Optional[str] = None,
+    platform: Optional[str] = "LinkedIn",
+    tone: Optional[str] = "professional",
+) -> str:
+    """
+    Generate a LinkedIn post using the Supervisor Agent (A2A orchestrator).
+    This is a synchronous call that returns the complete result without streaming.
+    """
+    if not user_id:
+        user_id = f"mcp-user-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    
+    thread_id = f"sup-{uuid.uuid4().hex[:8]}"
+    supervisor_url = os.getenv("SUPERVISOR_AGENT_URL", "http://supervisor:8005")
+    
+    logger.info(f"[{user_id}] Calling Supervisor Agent for topic: {topic}")
+    
+    with tracer.start_as_current_span("fastmcp_generate_linkedin_post_sync") as span:
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(
+                    f"{supervisor_url}/generate",
+                    json={
+                        "topic": topic,
+                        "platform": platform,
+                        "tone": tone,
+                        "user_id": user_id,
+                        "thread_id": thread_id
+                    }
+                )
+                response.raise_for_status()
+                result = response.json()
+            
+            final_content = result.get("final_content", "")
+            draft = result.get("draft", "")
+            
+            span.set_attribute("success", True)
+            span.set_attribute("supervisor_url", supervisor_url)
+            
+            return final_content or draft or ""
+            
+        except httpx.HTTPStatusError as e:
+            error_msg = f"Supervisor Agent error: {e.response.status_code} - {e.response.text}"
+            logger.error(error_msg)
+            span.set_attribute("error", True)
+            raise Exception(error_msg)
+        except Exception as e:
+            logger.error(f"Sync generation error: {e}", exc_info=True)
+            span.set_attribute("error", True)
+            raise
+
+
+@mcp.tool()
 async def greet(ctx: Context[ServerSession, None], name: str = "World") -> str:
     """Greet someone by name."""
     await ctx.info(f"Starting to greet {name}")
@@ -195,6 +252,79 @@ async def greet(ctx: Context[ServerSession, None], name: str = "World") -> str:
     await ctx.report_progress(1.0, message="processing complete!")
     await ctx.info(f"Successfully greeted {name}")
     return f"Hello, {name}!"
+
+
+@mcp.tool()
+async def discover_agents(ctx: Context[ServerSession, None]) -> str:
+    """
+    Discover all available agents via A2A protocol.
+    Returns information about each agent's capabilities and skills.
+    """
+    await ctx.info("🔍 Discovering agents via A2A protocol...")
+    
+    orchestrator = AgentOrchestrator(use_a2a_discovery=True)
+    try:
+        await orchestrator.discover_all_agents()
+        
+        agents_info = {}
+        for agent_name, card in orchestrator.get_discovered_agents().items():
+            agents_info[agent_name] = {
+                "name": card.name,
+                "description": card.description,
+                "version": card.version,
+                "skills": [s.get("name") for s in card.skills],
+                "endpoints": card.endpoints
+            }
+            await ctx.info(f"✅ {card.name}: {[s.get('name') for s in card.skills]}")
+        
+        await ctx.info(f"🎉 Discovered {len(agents_info)} agents")
+        return json.dumps(agents_info, indent=2)
+    finally:
+        await orchestrator.close()
+
+
+@mcp.tool()
+async def get_agent_card(
+    ctx: Context[ServerSession, None],
+    agent_name: str
+) -> str:
+    """
+    Get the A2A Agent Card for a specific agent.
+    
+    Args:
+        agent_name: Name of the agent (planner, researcher, writer, reviewer)
+    """
+    await ctx.info(f"🔍 Fetching Agent Card for: {agent_name}")
+    
+    orchestrator = AgentOrchestrator(use_a2a_discovery=True)
+    try:
+        agent_urls = {
+            "planner": orchestrator.planner_url,
+            "researcher": orchestrator.researcher_url,
+            "writer": orchestrator.writer_url,
+            "reviewer": orchestrator.reviewer_url,
+        }
+        
+        if agent_name not in agent_urls:
+            return json.dumps({"error": f"Unknown agent: {agent_name}. Available: {list(agent_urls.keys())}"})
+        
+        card = await orchestrator.discover_agent(agent_name, agent_urls[agent_name])
+        if card:
+            await ctx.info(f"✅ Discovered {card.name}")
+            return json.dumps({
+                "name": card.name,
+                "description": card.description,
+                "version": card.version,
+                "protocol": card.protocol,
+                "capabilities": card.capabilities,
+                "skills": card.skills,
+                "endpoints": card.endpoints
+            }, indent=2)
+        else:
+            return json.dumps({"error": f"Failed to discover {agent_name}"})
+    finally:
+        await orchestrator.close()
+
 
 if __name__ == "__main__":
     # Run the server

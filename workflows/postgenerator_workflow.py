@@ -523,14 +523,14 @@ def build_post_generator_workflow() -> StateGraph:
     workflow.add_node("planner", planner_node)
     workflow.add_node("researcher", researcher_node)
     workflow.add_node("writer", writer_node)
-    # workflow.add_node("reviewer", reviewer_node)
+    workflow.add_node("reviewer", reviewer_node)
     workflow.add_node("router", router_node)
     
     # Define edges (linear flow with conditional loop)
     workflow.add_edge("planner", "researcher")
     workflow.add_edge("researcher", "writer")
-    # workflow.add_edge("writer", "reviewer")
-    workflow.add_edge("writer", "router")
+    workflow.add_edge("writer", "reviewer")
+    workflow.add_edge("reviewer", "router")
     
     # Conditional routing from router
     workflow.add_conditional_edges(

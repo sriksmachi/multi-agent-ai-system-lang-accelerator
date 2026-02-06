@@ -31,7 +31,7 @@ class WriterAgent:
         """Initialize the writer agent."""
         
         # Initialize Azure OpenAI client with API key authentication
-        self.openai_client = AzureOpenAIClient(use_managed_identity=False, use_api_key=False)
+        self.openai_client = AzureOpenAIClient(use_managed_identity=False, use_api_key=True)
         
         # Load prompts from files
         self.system_prompt = self._load_prompt("system_prompt.txt")

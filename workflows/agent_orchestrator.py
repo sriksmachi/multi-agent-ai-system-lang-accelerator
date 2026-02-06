@@ -10,6 +10,7 @@ import httpx
 from typing import Dict, Any
 from datetime import datetime
 from opentelemetry import trace
+from opentelemetry.propagate import inject
 from core.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -41,6 +42,24 @@ class AgentOrchestrator:
         logger.info(f"  Writer: {self.writer_url}")
         logger.info(f"  Reviewer: {self.reviewer_url}")
     
+    def _get_trace_headers(self, state: Dict[str, Any]) -> Dict[str, str]:
+        """
+        Get headers with trace context propagation for distributed tracing.
+        
+        Args:
+            state: Current workflow state
+            
+        Returns:
+            Dictionary of headers including trace context
+        """
+        headers = {
+            "X-Thread-ID": state.get("thread_id", ""),
+            "X-User-ID": state.get("user_id", "")
+        }
+        # Inject W3C trace context (traceparent, tracestate)
+        inject(headers)
+        return headers
+    
     async def call_planner(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """
         Call Planner Agent via HTTP
@@ -69,10 +88,7 @@ class AgentOrchestrator:
                 response = await self.client.post(
                     f"{self.planner_url}/plan",
                     json=request_payload,
-                    headers={
-                        "X-Thread-ID": state.get("thread_id", ""),
-                        "X-User-ID": state.get("user_id", "")
-                    }
+                    headers=self._get_trace_headers(state)
                 )
                 response.raise_for_status()
                 result = response.json()
@@ -125,10 +141,7 @@ class AgentOrchestrator:
                 response = await self.client.post(
                     f"{self.researcher_url}/research",
                     json=request_payload,
-                    headers={
-                        "X-Thread-ID": state.get("thread_id", ""),
-                        "X-User-ID": state.get("user_id", "")
-                    }
+                    headers=self._get_trace_headers(state)
                 )
                 response.raise_for_status()
                 result = response.json()
@@ -195,10 +208,7 @@ class AgentOrchestrator:
                 response = await self.client.post(
                     f"{self.writer_url}/write",
                     json=request_payload,
-                    headers={
-                        "X-Thread-ID": state.get("thread_id", ""),
-                        "X-User-ID": state.get("user_id", "")
-                    }
+                    headers=self._get_trace_headers(state)
                 )
                 response.raise_for_status()
                 result = response.json()
@@ -253,10 +263,7 @@ class AgentOrchestrator:
                 response = await self.client.post(
                     f"{self.reviewer_url}/review",
                     json=request_payload,
-                    headers={
-                        "X-Thread-ID": state.get("thread_id", ""),
-                        "X-User-ID": state.get("user_id", "")
-                    }
+                    headers=self._get_trace_headers(state)
                 )
                 response.raise_for_status()
                 result = response.json()

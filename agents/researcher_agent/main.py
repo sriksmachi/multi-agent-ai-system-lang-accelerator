@@ -64,6 +64,41 @@ async def health_check():
     )
 
 
+@app.get("/.well-known/agent.json")
+async def agent_discovery():
+    """A2A Agent Discovery endpoint - returns Agent Card"""
+    return {
+        "name": "Researcher Agent",
+        "description": "Document research agent using Azure AI Search for multi-agent LinkedIn post generation",
+        "version": "1.0.0",
+        "protocol": "a2a",
+        "capabilities": {
+            "streaming": False,
+            "pushNotifications": False
+        },
+        "skills": [
+            {
+                "name": "research",
+                "description": "Conduct research on a topic using Azure AI Search to find relevant documents",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "topic": {"type": "string", "description": "Research topic"},
+                        "plan": {"type": "string", "description": "Research plan from planner agent"},
+                        "user_id": {"type": "string", "description": "User identifier"},
+                        "thread_id": {"type": "string", "description": "Thread identifier for tracking"}
+                    },
+                    "required": ["topic", "thread_id"]
+                }
+            }
+        ],
+        "endpoints": {
+            "research": "/research",
+            "health": "/health"
+        }
+    }
+
+
 @app.post("/research", response_model=ResearchResponse)
 async def conduct_research(request: ResearchRequest):
     """

@@ -64,6 +64,43 @@ async def health_check():
     )
 
 
+@app.get("/.well-known/agent.json")
+async def agent_discovery():
+    """A2A Agent Discovery endpoint - returns Agent Card"""
+    return {
+        "name": "Reviewer Agent",
+        "description": "Content review agent for multi-agent LinkedIn post generation using Azure OpenAI",
+        "version": "1.0.0",
+        "protocol": "a2a",
+        "capabilities": {
+            "streaming": False,
+            "pushNotifications": False
+        },
+        "skills": [
+            {
+                "name": "review",
+                "description": "Review and finalize content draft, providing scores and feedback",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "topic": {"type": "string", "description": "Original topic"},
+                        "plan": {"type": "string", "description": "Content plan"},
+                        "draft": {"type": "string", "description": "Draft content to review"},
+                        "platform": {"type": "string", "description": "Target platform"},
+                        "user_id": {"type": "string", "description": "User identifier"},
+                        "thread_id": {"type": "string", "description": "Thread identifier for tracking"}
+                    },
+                    "required": ["topic", "draft", "thread_id"]
+                }
+            }
+        ],
+        "endpoints": {
+            "review": "/review",
+            "health": "/health"
+        }
+    }
+
+
 @app.post("/review", response_model=ReviewResponse)
 async def review_content(request: ReviewRequest):
     """

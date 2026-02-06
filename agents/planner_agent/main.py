@@ -64,6 +64,42 @@ async def health_check():
     )
 
 
+@app.get("/.well-known/agent.json")
+async def agent_discovery():
+    """A2A Agent Discovery endpoint - returns Agent Card"""
+    return {
+        "name": "Planner Agent",
+        "description": "Content planning agent for multi-agent LinkedIn post generation using Azure OpenAI",
+        "version": "1.0.0",
+        "protocol": "a2a",
+        "capabilities": {
+            "streaming": False,
+            "pushNotifications": False
+        },
+        "skills": [
+            {
+                "name": "plan",
+                "description": "Generate a content plan for a LinkedIn post based on topic, tone, and platform",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "topic": {"type": "string", "description": "The topic for the LinkedIn post"},
+                        "platform": {"type": "string", "description": "Target platform (e.g., LinkedIn)"},
+                        "tone": {"type": "string", "description": "Desired tone of the content"},
+                        "user_id": {"type": "string", "description": "User identifier"},
+                        "thread_id": {"type": "string", "description": "Thread identifier for tracking"}
+                    },
+                    "required": ["topic", "thread_id"]
+                }
+            }
+        ],
+        "endpoints": {
+            "plan": "/plan",
+            "health": "/health"
+        }
+    }
+
+
 @app.post("/plan", response_model=PlanResponse)
 async def create_plan(request: PlanRequest):
     """

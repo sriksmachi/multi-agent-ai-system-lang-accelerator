@@ -64,6 +64,44 @@ async def health_check():
     )
 
 
+@app.get("/.well-known/agent.json")
+async def agent_discovery():
+    """A2A Agent Discovery endpoint - returns Agent Card"""
+    return {
+        "name": "Writer Agent",
+        "description": "Content writing agent for multi-agent LinkedIn post generation using Azure OpenAI",
+        "version": "1.0.0",
+        "protocol": "a2a",
+        "capabilities": {
+            "streaming": False,
+            "pushNotifications": False
+        },
+        "skills": [
+            {
+                "name": "write",
+                "description": "Generate content draft for a LinkedIn post based on plan and research",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "topic": {"type": "string", "description": "The topic for the post"},
+                        "plan": {"type": "string", "description": "Content plan from planner agent"},
+                        "research_documents": {"type": "array", "description": "Research documents from researcher agent"},
+                        "tone": {"type": "string", "description": "Desired tone of the content"},
+                        "platform": {"type": "string", "description": "Target platform"},
+                        "user_id": {"type": "string", "description": "User identifier"},
+                        "thread_id": {"type": "string", "description": "Thread identifier for tracking"}
+                    },
+                    "required": ["topic", "plan", "thread_id"]
+                }
+            }
+        ],
+        "endpoints": {
+            "write": "/write",
+            "health": "/health"
+        }
+    }
+
+
 @app.post("/write", response_model=WriteResponse)
 async def write_content(request: WriteRequest):
     """

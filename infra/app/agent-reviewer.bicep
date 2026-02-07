@@ -12,7 +12,7 @@ param openAIDeploymentName string
 param openAIApiVersion string = '2024-12-01-preview'
 param imageName string = ''
 
-resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' existing = {
+resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
   name: containerAppsEnvironmentName
 }
 
@@ -24,7 +24,7 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' existing = {
   name: applicationInsightsName
 }
 
-resource reviewerAgent 'Microsoft.App/containerApps@2023-05-01' = {
+resource reviewerAgent 'Microsoft.App/containerApps@2024-03-01' = {
   name: name
   location: location
   tags: union(tags, { 'azd-service-name': 'reviewer-agent' })

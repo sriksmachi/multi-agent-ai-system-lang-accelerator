@@ -97,6 +97,8 @@ output WRITER_AGENT_URI string = resources.outputs.writerAgentUri
 output WRITER_AGENT_NAME string = resources.outputs.writerAgentName
 output REVIEWER_AGENT_URI string = resources.outputs.reviewerAgentUri
 output REVIEWER_AGENT_NAME string = resources.outputs.reviewerAgentName
+output SUPERVISOR_AGENT_URI string = resources.outputs.supervisorAgentUri
+output SUPERVISOR_AGENT_NAME string = resources.outputs.supervisorAgentName
 
 // Additional outputs
 output AZURE_KEY_VAULT_NAME string = resources.outputs.keyVaultName

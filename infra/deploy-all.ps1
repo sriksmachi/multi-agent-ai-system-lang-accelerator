@@ -45,18 +45,15 @@ $images = @(
     @{Name="researcher-agent"; Dockerfile="agents/researcher_agent/Dockerfile"},
     @{Name="writer-agent"; Dockerfile="agents/writer_agent/Dockerfile"},
     @{Name="reviewer-agent"; Dockerfile="agents/reviewer_agent/Dockerfile"},
+    @{Name="supervisor-agent"; Dockerfile="agents/supervisor/Dockerfile"},
     @{Name="orchestrator-api"; Dockerfile="Dockerfile"}
 )
 
 foreach ($image in $images) {
     Write-Host ""
     Write-Host "📦 Building $($image.Name)..." -ForegroundColor Cyan
-    az acr build `
-        --registry $registryName `
-        --image "$($image.Name):latest" `
-        --image "$($image.Name):$(Get-Date -Format 'yyyyMMdd-HHmmss')" `
-        --file $image.Dockerfile `
-        .
+    $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    az acr build --registry $registryName --image "$($image.Name):latest" --image "$($image.Name):$timestamp" --file $image.Dockerfile .
     
     if ($LASTEXITCODE -ne 0) {
         Write-Host "❌ Failed to build $($image.Name)" -ForegroundColor Red
@@ -74,6 +71,7 @@ $apps = @(
     @{Name="ca-researcher-$EnvironmentName"; Image="researcher-agent"},
     @{Name="ca-writer-$EnvironmentName"; Image="writer-agent"},
     @{Name="ca-reviewer-$EnvironmentName"; Image="reviewer-agent"},
+    @{Name="ca-supervisor-$EnvironmentName"; Image="supervisor-agent"},
     @{Name="ca-orchestrator-$EnvironmentName"; Image="orchestrator-api"}
 )
 
@@ -81,10 +79,7 @@ foreach ($app in $apps) {
     Write-Host ""
     Write-Host "🔄 Updating $($app.Name)..." -ForegroundColor Cyan
     
-    az containerapp update `
-        --name $app.Name `
-        --resource-group $ResourceGroup `
-        --image "$registryServer/$($app.Image):latest"
+    az containerapp update --name $app.Name --resource-group $ResourceGroup --image "$registryServer/$($app.Image):latest"
     
     if ($LASTEXITCODE -ne 0) {
         Write-Host "⚠️  Warning: Failed to update $($app.Name)" -ForegroundColor Yellow
@@ -95,19 +90,21 @@ foreach ($app in $apps) {
 
 # Get orchestrator URL
 Write-Host ""
-Write-Host "🌐 Getting orchestrator URL..." -ForegroundColor Cyan
-$orchestratorUrl = az containerapp show `
-    --name "ca-orchestrator-$EnvironmentName" `
-    --resource-group $ResourceGroup `
-    --query "properties.configuration.ingress.fqdn" -o tsv
+Write-Host "🌐 Getting service URLs..." -ForegroundColor Cyan
+$orchestratorUrl = az containerapp show --name "ca-orchestrator-$EnvironmentName" --resource-group $ResourceGroup --query "properties.configuration.ingress.fqdn" -o tsv
+
+$supervisorUrl = az containerapp show --name "ca-supervisor-$EnvironmentName" --resource-group $ResourceGroup --query "properties.configuration.ingress.fqdn" -o tsv
 
 Write-Host ""
 Write-Host "✅ Deployment Complete!" -ForegroundColor Green
 Write-Host ""
 Write-Host "📍 Orchestrator API: https://$orchestratorUrl" -ForegroundColor Cyan
+Write-Host "📍 Supervisor Agent: https://$supervisorUrl" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "🧪 Test the deployment:" -ForegroundColor Yellow
 Write-Host "   curl https://$orchestratorUrl/health"
+Write-Host "   curl https://$supervisorUrl/health"
+Write-Host "   curl https://$supervisorUrl/agents"
 Write-Host ""
 Write-Host "📊 Monitor in Application Insights:" -ForegroundColor Yellow
 Write-Host "   az portal show --resource-group $ResourceGroup --resource-type Microsoft.Insights/components"

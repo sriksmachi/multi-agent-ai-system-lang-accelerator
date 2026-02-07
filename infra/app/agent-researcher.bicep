@@ -11,7 +11,7 @@ param searchServiceKey string
 param searchIndexName string = 'documents-index'
 param imageName string = ''
 
-resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' existing = {
+resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
   name: containerAppsEnvironmentName
 }
 
@@ -23,7 +23,7 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' existing = {
   name: applicationInsightsName
 }
 
-resource researcherAgent 'Microsoft.App/containerApps@2023-05-01' = {
+resource researcherAgent 'Microsoft.App/containerApps@2024-03-01' = {
   name: name
   location: location
   tags: union(tags, { 'azd-service-name': 'researcher-agent' })

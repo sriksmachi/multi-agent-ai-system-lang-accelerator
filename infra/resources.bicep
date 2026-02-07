@@ -60,12 +60,13 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
 }
 
 // Azure AI Search
+// NOTE: Using 'free' SKU for dev/test. Change to 'basic' or 'standard' for production.
 resource searchService 'Microsoft.Search/searchServices@2023-11-01' = {
   name: 'srch-${environmentName}'
   location: location
   tags: tags
   sku: {
-    name: 'basic'
+    name: 'free'
   }
   properties: {
     replicaCount: 1
@@ -212,7 +213,7 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' =
 }
 
 // Container Apps Environment
-resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' = {
+resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: 'cae-${environmentName}'
   location: location
   tags: tags
@@ -224,6 +225,12 @@ resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2023-05-01'
         sharedKey: logAnalytics.listKeys().primarySharedKey
       }
     }
+    workloadProfiles: [
+      {
+        name: 'Consumption'
+        workloadProfileType: 'Consumption'
+      }
+    ]
   }
 }
 
@@ -390,6 +397,27 @@ module reviewerAgent './app/agent-reviewer.bicep' = {
   }
 }
 
+// Container App for Supervisor Agent (A2A Orchestrator)
+module supervisorAgent './app/agent-supervisor.bicep' = {
+  name: 'supervisor-agent'
+  params: {
+    name: 'ca-supervisor-${environmentName}'
+    location: location
+    tags: tags
+    containerAppsEnvironmentName: containerAppsEnvironment.name
+    containerRegistryName: containerRegistry.name
+    applicationInsightsName: appInsights.name
+    openAIEndpoint: openAI.properties.endpoint
+    openAIKey: openAI.listKeys().key1
+    openAIDeploymentName: gpt4Deployment.name
+    openAIApiVersion: '2024-12-01-preview'
+    plannerServiceUrl: plannerAgent.outputs.uri
+    researcherServiceUrl: researcherAgent.outputs.uri
+    writerServiceUrl: writerAgent.outputs.uri
+    reviewerServiceUrl: reviewerAgent.outputs.uri
+  }
+}
+
 // Container App for Orchestrator API
 module api './app/api.bicep' = {
   name: 'orchestrator-api'
@@ -402,10 +430,15 @@ module api './app/api.bicep' = {
     applicationInsightsName: appInsights.name
     storageAccountName: storageAccount.name
     searchServiceName: searchService.name
+    openAIEndpoint: openAI.properties.endpoint
+    openAIKey: openAI.listKeys().key1
+    openAIDeploymentName: gpt4Deployment.name
+    openAIApiVersion: '2024-12-01-preview'
     plannerServiceUrl: plannerAgent.outputs.uri
     researcherServiceUrl: researcherAgent.outputs.uri
     writerServiceUrl: writerAgent.outputs.uri
     reviewerServiceUrl: reviewerAgent.outputs.uri
+    supervisorServiceUrl: supervisorAgent.outputs.uri
     cosmosEndpoint: cosmosAccount.properties.documentEndpoint
     cosmosPrimaryKey: cosmosAccount.listKeys().primaryMasterKey
     cosmosDatabaseName: cosmosDatabase.name
@@ -453,6 +486,9 @@ output writerAgentFqdn string = writerAgent.outputs.fqdn
 output reviewerAgentUri string = reviewerAgent.outputs.uri
 output reviewerAgentName string = reviewerAgent.outputs.name
 output reviewerAgentFqdn string = reviewerAgent.outputs.fqdn
+output supervisorAgentUri string = supervisorAgent.outputs.uri
+output supervisorAgentName string = supervisorAgent.outputs.name
+output supervisorAgentFqdn string = supervisorAgent.outputs.fqdn
 
 // Orchestrator API Outputs
 output orchestratorApiUri string = api.outputs.uri

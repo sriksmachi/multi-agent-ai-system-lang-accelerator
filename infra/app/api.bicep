@@ -8,11 +8,19 @@ param applicationInsightsName string
 param storageAccountName string
 param searchServiceName string
 
+// Azure OpenAI parameters
+param openAIEndpoint string = ''
+@secure()
+param openAIKey string = ''
+param openAIDeploymentName string = ''
+param openAIApiVersion string = '2024-12-01-preview'
+
 // Agent service URLs
 param plannerServiceUrl string = ''
 param researcherServiceUrl string = ''
 param writerServiceUrl string = ''
 param reviewerServiceUrl string = ''
+param supervisorServiceUrl string = ''
 
 // Cosmos DB parameters
 param cosmosEndpoint string = ''
@@ -22,9 +30,8 @@ param cosmosDatabaseName string = ''
 param cosmosContainerName string = ''
 
 param imageName string = ''
-param exists bool = false
 
-resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' existing = {
+resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
   name: containerAppsEnvironmentName
 }
 
@@ -44,20 +51,26 @@ resource searchService 'Microsoft.Search/searchServices@2023-11-01' existing = {
   name: searchServiceName
 }
 
-resource app 'Microsoft.App/containerApps@2023-05-01' = {
+resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: name
   location: location
-  tags: tags
+  tags: union(tags, { 'azd-service-name': 'orchestrator-api' })
   identity: {
     type: 'SystemAssigned'
   }
   properties: {
     managedEnvironmentId: containerAppsEnvironment.id
     configuration: {
+      activeRevisionsMode: 'Single'
       ingress: {
         external: true
         targetPort: 8000
         transport: 'auto'
+        corsPolicy: {
+          allowedOrigins: ['*']
+          allowedMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+          allowedHeaders: ['*']
+        }
       }
       registries: [
         {
@@ -82,13 +95,17 @@ resource app 'Microsoft.App/containerApps@2023-05-01' = {
           name: 'cosmos-primary-key'
           value: cosmosPrimaryKey
         }
+        {
+          name: 'openai-api-key'
+          value: openAIKey
+        }
       ]
     }
     template: {
       containers: [
         {
           image: !empty(imageName) ? imageName : 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
-          name: 'main'
+          name: 'orchestrator-api'
           env: [
             {
               name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
@@ -111,6 +128,22 @@ resource app 'Microsoft.App/containerApps@2023-05-01' = {
               value: storageAccount.name
             }
             {
+              name: 'AZURE_OPENAI_ENDPOINT'
+              value: openAIEndpoint
+            }
+            {
+              name: 'AZURE_OPENAI_API_KEY'
+              secretRef: 'openai-api-key'
+            }
+            {
+              name: 'AZURE_OPENAI_DEPLOYMENT_NAME'
+              value: openAIDeploymentName
+            }
+            {
+              name: 'AZURE_OPENAI_API_VERSION'
+              value: openAIApiVersion
+            }
+            {
               name: 'PLANNER_SERVICE_URL'
               value: plannerServiceUrl
             }
@@ -125,6 +158,10 @@ resource app 'Microsoft.App/containerApps@2023-05-01' = {
             {
               name: 'REVIEWER_SERVICE_URL'
               value: reviewerServiceUrl
+            }
+            {
+              name: 'SUPERVISOR_SERVICE_URL'
+              value: supervisorServiceUrl
             }
             {
               name: 'AZURE_COSMOSDB_ENDPOINT'
@@ -151,11 +188,41 @@ resource app 'Microsoft.App/containerApps@2023-05-01' = {
             cpu: json('0.5')
             memory: '1Gi'
           }
+          probes: [
+            {
+              type: 'Liveness'
+              httpGet: {
+                path: '/health'
+                port: 8000
+              }
+              initialDelaySeconds: 30
+              periodSeconds: 30
+            }
+            {
+              type: 'Readiness'
+              httpGet: {
+                path: '/health'
+                port: 8000
+              }
+              initialDelaySeconds: 10
+              periodSeconds: 10
+            }
+          ]
         }
       ]
       scale: {
         minReplicas: 1
         maxReplicas: 10
+        rules: [
+          {
+            name: 'http-scaling'
+            http: {
+              metadata: {
+                concurrentRequests: '20'
+              }
+            }
+          }
+        ]
       }
     }
   }

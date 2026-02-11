@@ -21,7 +21,7 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 # Configuration
-ORCHESTRATOR_URL = "http://localhost:8000"
+ORCHESTRATOR_URL = "https://ca-orchestrator-maala-acc.bravebay-65e1f8d4.westus2.azurecontainerapps.io"
 MCP_SERVER_URL = f"{ORCHESTRATOR_URL}/mcp"
 
 # Page configuration

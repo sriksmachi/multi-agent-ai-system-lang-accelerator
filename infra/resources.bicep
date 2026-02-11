@@ -3,6 +3,11 @@ param location string = resourceGroup().location
 param principalId string
 param tags object = {}
 
+// Parameters for existing Azure OpenAI resources
+param existingOpenAIEndpoint string = 'https://vism-mjcnt3i9-eastus2.openai.azure.com/'
+param existingOpenAIKey string  // Will be provided at deployment time
+param existingOpenAIDeploymentName string = 'gpt-5.2-chat'
+
 // Storage Account
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: 'st${take(replace(environmentName, '-', ''), 9)}${uniqueString(resourceGroup().id)}'
@@ -76,57 +81,12 @@ resource searchService 'Microsoft.Search/searchServices@2023-11-01' = {
   }
 }
 
-// Azure OpenAI
-resource openAI 'Microsoft.CognitiveServices/accounts@2023-10-01-preview' = {
-  name: 'oai-${environmentName}'
-  location: location
-  tags: tags
-  kind: 'OpenAI'
-  sku: {
-    name: 'S0'
-  }
-  properties: {
-    customSubDomainName: 'oai-${environmentName}${uniqueString(resourceGroup().id)}'
-    publicNetworkAccess: 'Enabled'
-  }
-}
-
-// Azure OpenAI GPT-4o Deployment
-resource gpt4Deployment 'Microsoft.CognitiveServices/accounts/deployments@2023-10-01-preview' = {
-  parent: openAI
-  name: 'gpt-5.2-chat'
-  sku: {
-    name: 'Standard'
-    capacity: 50
-  }
-  properties: {
-    model: {
-      format: 'OpenAI'
-      name: 'gpt-4o'
-      version: '2024-08-06'
-    }
-  }
-}
-
-// Azure OpenAI Embeddings Deployment
-resource embeddingsDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-10-01-preview' = {
-  parent: openAI
-  name: 'text-embedding-3-small'
-  dependsOn: [
-    gpt4Deployment
-  ]
-  sku: {
-    name: 'Standard'
-    capacity: 50
-  }
-  properties: {
-    model: {
-      format: 'OpenAI'
-      name: 'text-embedding-3-small'
-      version: '1'
-    }
-  }
-}
+// Azure OpenAI resources - COMMENTED OUT
+// Using existing Azure OpenAI instance to avoid quota restrictions
+// Endpoint: existingOpenAIEndpoint
+// Key: existingOpenAIKey
+// Deployment: existingOpenAIDeploymentName
+// This approach reuses existing resources and avoids creating new ones
 
 // Cosmos DB Account
 resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2023-11-15' = {
@@ -310,15 +270,16 @@ resource searchRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-0
   }
 }
 
-resource openAIRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(principalId)) {
-  scope: openAI
-  name: guid(openAI.id, principalId, cognitiveServicesUserRoleId)
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', cognitiveServicesUserRoleId)
-    principalId: principalId
-    principalType: 'User'
-  }
-}
+// NOTE: OpenAI role assignment commented out - using existing OpenAI resource not managed by this template
+// resource openAIRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(principalId)) {
+//   scope: openAI
+//   name: guid(openAI.id, principalId, cognitiveServicesUserRoleId)
+//   properties: {
+//     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', cognitiveServicesUserRoleId)
+//     principalId: principalId
+//     principalType: 'User'
+//   }
+// }
 
 resource cosmosRoleAssignment 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2023-11-15' = if (!empty(principalId)) {
   parent: cosmosAccount
@@ -340,9 +301,9 @@ module plannerAgent './app/agent-planner.bicep' = {
     containerAppsEnvironmentName: containerAppsEnvironment.name
     containerRegistryName: containerRegistry.name
     applicationInsightsName: appInsights.name
-    openAIEndpoint: openAI.properties.endpoint
-    openAIKey: openAI.listKeys().key1
-    openAIDeploymentName: gpt4Deployment.name
+    openAIEndpoint: existingOpenAIEndpoint
+    openAIKey: existingOpenAIKey
+    openAIDeploymentName: existingOpenAIDeploymentName
     openAIApiVersion: '2024-12-01-preview'
   }
 }
@@ -373,9 +334,9 @@ module writerAgent './app/agent-writer.bicep' = {
     containerAppsEnvironmentName: containerAppsEnvironment.name
     containerRegistryName: containerRegistry.name
     applicationInsightsName: appInsights.name
-    openAIEndpoint: openAI.properties.endpoint
-    openAIKey: openAI.listKeys().key1
-    openAIDeploymentName: gpt4Deployment.name
+    openAIEndpoint: existingOpenAIEndpoint
+    openAIKey: existingOpenAIKey
+    openAIDeploymentName: existingOpenAIDeploymentName
     openAIApiVersion: '2024-12-01-preview'
   }
 }
@@ -390,9 +351,9 @@ module reviewerAgent './app/agent-reviewer.bicep' = {
     containerAppsEnvironmentName: containerAppsEnvironment.name
     containerRegistryName: containerRegistry.name
     applicationInsightsName: appInsights.name
-    openAIEndpoint: openAI.properties.endpoint
-    openAIKey: openAI.listKeys().key1
-    openAIDeploymentName: gpt4Deployment.name
+    openAIEndpoint: existingOpenAIEndpoint
+    openAIKey: existingOpenAIKey
+    openAIDeploymentName: existingOpenAIDeploymentName
     openAIApiVersion: '2024-12-01-preview'
   }
 }
@@ -407,9 +368,9 @@ module supervisorAgent './app/agent-supervisor.bicep' = {
     containerAppsEnvironmentName: containerAppsEnvironment.name
     containerRegistryName: containerRegistry.name
     applicationInsightsName: appInsights.name
-    openAIEndpoint: openAI.properties.endpoint
-    openAIKey: openAI.listKeys().key1
-    openAIDeploymentName: gpt4Deployment.name
+    openAIEndpoint: existingOpenAIEndpoint
+    openAIKey: existingOpenAIKey
+    openAIDeploymentName: existingOpenAIDeploymentName
     openAIApiVersion: '2024-12-01-preview'
     plannerServiceUrl: plannerAgent.outputs.uri
     researcherServiceUrl: researcherAgent.outputs.uri
@@ -430,9 +391,9 @@ module api './app/api.bicep' = {
     applicationInsightsName: appInsights.name
     storageAccountName: storageAccount.name
     searchServiceName: searchService.name
-    openAIEndpoint: openAI.properties.endpoint
-    openAIKey: openAI.listKeys().key1
-    openAIDeploymentName: gpt4Deployment.name
+    openAIEndpoint: existingOpenAIEndpoint
+    openAIKey: existingOpenAIKey
+    openAIDeploymentName: existingOpenAIDeploymentName
     openAIApiVersion: '2024-12-01-preview'
     plannerServiceUrl: plannerAgent.outputs.uri
     researcherServiceUrl: researcherAgent.outputs.uri
@@ -462,11 +423,9 @@ output containerRegistryEndpoint string = containerRegistry.properties.loginServ
 output logAnalyticsWorkspaceName string = logAnalytics.name
 output keyVaultName string = keyVault.name
 output aiHubName string = aiHub.name
-output openAIEndpoint string = openAI.properties.endpoint
-output openAIName string = openAI.name
-output openAIKey string = openAI.listKeys().key1
-output openAIDeploymentName string = gpt4Deployment.name
-output openAIEmbeddingsDeploymentName string = embeddingsDeployment.name
+output openAIEndpoint string = existingOpenAIEndpoint
+output openAIDeploymentName string = existingOpenAIDeploymentName
+output openAIEmbeddingsDeploymentName string = 'text-embedding-3-small'
 output cosmosEndpoint string = cosmosAccount.properties.documentEndpoint
 output cosmosAccountName string = cosmosAccount.name
 output cosmosPrimaryKey string = cosmosAccount.listKeys().primaryMasterKey

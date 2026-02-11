@@ -12,6 +12,15 @@ param location string
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
 
+@description('Existing Azure OpenAI endpoint (if useExistingOpenAI is true)')
+param existingOpenAIEndpoint string = 'https://vism-mjcnt3i9-eastus2.openai.azure.com/'
+
+@description('Existing Azure OpenAI API key')
+param existingOpenAIKey string = ''
+
+@description('Existing Azure OpenAI deployment name')
+param existingOpenAIDeploymentName string = 'gpt-5.2-chat'
+
 // Tags that should be applied to all resources
 var tags = {
   'azd-env-name': environmentName
@@ -33,6 +42,9 @@ module resources 'resources.bicep' = {
     location: location
     principalId: principalId
     tags: tags
+    existingOpenAIEndpoint: existingOpenAIEndpoint
+    existingOpenAIKey: existingOpenAIKey
+    existingOpenAIDeploymentName: existingOpenAIDeploymentName
   }
 }
 
@@ -57,13 +69,10 @@ output AZURE_SEARCH_INDEX_NAME string = 'documents-index'
 
 // Azure OpenAI outputs
 output AZURE_OPENAI_ENDPOINT string = resources.outputs.openAIEndpoint
-output AZURE_OPENAI_NAME string = resources.outputs.openAIName
-output AZURE_OPENAI_API_KEY string = resources.outputs.openAIKey
 output AZURE_OPENAI_DEPLOYMENT_NAME string = resources.outputs.openAIDeploymentName
 output AZURE_OPENAI_API_VERSION string = '2024-12-01-preview'
 output AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT string = resources.outputs.openAIEmbeddingsDeploymentName
 output AZURE_OPENAI_EMBEDDINGS_ENDPOINT string = resources.outputs.openAIEndpoint
-output AZURE_OPENAI_EMBEDDINGS_API_KEY string = resources.outputs.openAIKey
 output AZURE_OPENAI_EMBEDDINGS_API_VERSION string = '2023-05-15'
 output AZURE_DEPLOYMENT_NAME string = resources.outputs.openAIDeploymentName
 output AZURE_MODEL_NAME string = resources.outputs.openAIDeploymentName

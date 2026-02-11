@@ -13,6 +13,9 @@ import uuid
 import httpx
 from dotenv import load_dotenv
 from pydantic import BaseModel
+# Add health endpoint to the underlying Starlette app
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 
 # Load environment variables FIRST
 load_dotenv()
@@ -28,6 +31,7 @@ from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor
 OpenAIInstrumentor().instrument()
 
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 # Azure imports
 from azure.monitor.opentelemetry import configure_azure_monitor
@@ -39,6 +43,7 @@ from opentelemetry import trace
 
 # MCP imports
 from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.streamable_http_manager import TransportSecuritySettings
 from mcp import ServerSession
 
 import uvicorn
@@ -82,10 +87,31 @@ logging.getLogger("mcp.server.transport_security").setLevel(logging.ERROR)
 tracer = trace.get_tracer(__name__)
 settings.tracing_implementation = "opentelemetry"
 
-mcp = FastMCP("SocialMediaPostGenerator")
+# Configure MCP transport security to allow all hosts (required for Azure Container Apps)
+transport_security = TransportSecuritySettings(
+    enable_dns_rebinding_protection=False
+)
 
-# Get the Starlette app and configure CORS immediately
+mcp = FastMCP("SocialMediaPostGenerator", transport_security=transport_security)
+
+# Get the Starlette app and configure for Azure Container Apps
 starlette_app = mcp.streamable_http_app()
+
+# Add health and root routes BEFORE wrapping with middleware
+async def health_check(request):
+    """Health check endpoint for Docker healthcheck."""
+    return JSONResponse({"status": "healthy", "service": "orchestrator-api"})
+
+async def root(request):
+    """Root endpoint - health check for container probes."""
+    return JSONResponse({"status": "healthy", "service": "orchestrator-api"})
+
+# Add routes to the original Starlette app
+starlette_app.routes.append(Route("/", root))
+starlette_app.routes.append(Route("/health", health_check))
+
+# Wrap with TrustedHostMiddleware to accept all hosts (fixes Azure Container Apps 421 error)
+starlette_app = TrustedHostMiddleware(starlette_app, allowed_hosts=["*"])
 
 # Then wrap it with CORS middleware
 starlette_app = CORSMiddleware(

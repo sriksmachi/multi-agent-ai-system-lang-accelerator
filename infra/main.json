@@ -1,0 +1,2495 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.18.4.5664",
+      "templateHash": "16845732025553475267"
+    }
+  },
+  "parameters": {
+    "environmentName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the environment that can be used as part of naming resource convention"
+      },
+      "maxLength": 64,
+      "minLength": 1
+    },
+    "location": {
+      "type": "string",
+      "metadata": {
+        "description": "Primary location for all resources"
+      },
+      "minLength": 1
+    },
+    "principalId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Id of the user or app to assign application roles"
+      }
+    },
+    "existingOpenAIEndpoint": {
+      "type": "string",
+      "defaultValue": "https://vism-mjcnt3i9-eastus2.openai.azure.com/",
+      "metadata": {
+        "description": "Existing Azure OpenAI endpoint (if useExistingOpenAI is true)"
+      }
+    },
+    "existingOpenAIKey": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Existing Azure OpenAI API key"
+      }
+    },
+    "existingOpenAIDeploymentName": {
+      "type": "string",
+      "defaultValue": "gpt-5.2-chat",
+      "metadata": {
+        "description": "Existing Azure OpenAI deployment name"
+      }
+    }
+  },
+  "variables": {
+    "tags": {
+      "azd-env-name": "[parameters('environmentName')]"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2021-04-01",
+      "name": "[format('rg-{0}', parameters('environmentName'))]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]"
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "resources",
+      "resourceGroup": "[format('rg-{0}', parameters('environmentName'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "environmentName": {
+            "value": "[parameters('environmentName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "principalId": {
+            "value": "[parameters('principalId')]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          },
+          "existingOpenAIEndpoint": {
+            "value": "[parameters('existingOpenAIEndpoint')]"
+          },
+          "existingOpenAIKey": {
+            "value": "[parameters('existingOpenAIKey')]"
+          },
+          "existingOpenAIDeploymentName": {
+            "value": "[parameters('existingOpenAIDeploymentName')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.18.4.5664",
+              "templateHash": "3067118772254036639"
+            }
+          },
+          "parameters": {
+            "environmentName": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string",
+              "defaultValue": "[resourceGroup().location]"
+            },
+            "principalId": {
+              "type": "string"
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {}
+            },
+            "existingOpenAIEndpoint": {
+              "type": "string",
+              "defaultValue": "https://vism-mjcnt3i9-eastus2.openai.azure.com/"
+            },
+            "existingOpenAIKey": {
+              "type": "string"
+            },
+            "existingOpenAIDeploymentName": {
+              "type": "string",
+              "defaultValue": "gpt-5.2-chat"
+            }
+          },
+          "variables": {
+            "storageRoleDefinitionId": "ba92f5b4-2d11-453d-a403-e96b0029c9fe",
+            "searchRoleDefinitionId": "1407120a-92aa-4202-b7e9-c0e197c71c8f",
+            "cosmosRoleDefinitionId": "00000000-0000-0000-0000-000000000002",
+            "cognitiveServicesUserRoleId": "a97b65f3-24c7-4388-baec-2e87135dc908"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Storage/storageAccounts",
+              "apiVersion": "2023-01-01",
+              "name": "[format('st{0}{1}', take(replace(parameters('environmentName'), '-', ''), 9), uniqueString(resourceGroup().id))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "Standard_LRS"
+              },
+              "kind": "StorageV2",
+              "properties": {
+                "accessTier": "Hot",
+                "allowBlobPublicAccess": false,
+                "minimumTlsVersion": "TLS1_2",
+                "supportsHttpsTrafficOnly": true
+              }
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}', format('st{0}{1}', take(replace(parameters('environmentName'), '-', ''), 9), uniqueString(resourceGroup().id)), 'default')]",
+              "properties": {
+                "deleteRetentionPolicy": {
+                  "enabled": true,
+                  "days": 7
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', format('st{0}{1}', take(replace(parameters('environmentName'), '-', ''), 9), uniqueString(resourceGroup().id)))]"
+              ]
+            },
+            {
+              "type": "Microsoft.OperationalInsights/workspaces",
+              "apiVersion": "2022-10-01",
+              "name": "[format('log-{0}', parameters('environmentName'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "sku": {
+                  "name": "PerGB2018"
+                },
+                "retentionInDays": 30
+              }
+            },
+            {
+              "type": "Microsoft.Insights/components",
+              "apiVersion": "2020-02-02",
+              "name": "[format('appi-{0}', parameters('environmentName'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "web",
+              "properties": {
+                "Application_Type": "web",
+                "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}', parameters('environmentName')))]",
+                "publicNetworkAccessForIngestion": "Enabled",
+                "publicNetworkAccessForQuery": "Enabled"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}', parameters('environmentName')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Search/searchServices",
+              "apiVersion": "2023-11-01",
+              "name": "[format('srch-{0}', parameters('environmentName'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "free"
+              },
+              "properties": {
+                "replicaCount": 1,
+                "partitionCount": 1,
+                "hostingMode": "default",
+                "publicNetworkAccess": "enabled"
+              }
+            },
+            {
+              "type": "Microsoft.DocumentDB/databaseAccounts",
+              "apiVersion": "2023-11-15",
+              "name": "[format('cosmos-{0}{1}', parameters('environmentName'), uniqueString(resourceGroup().id))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "GlobalDocumentDB",
+              "properties": {
+                "databaseAccountOfferType": "Standard",
+                "consistencyPolicy": {
+                  "defaultConsistencyLevel": "Session"
+                },
+                "locations": [
+                  {
+                    "locationName": "[parameters('location')]",
+                    "failoverPriority": 0,
+                    "isZoneRedundant": false
+                  }
+                ],
+                "publicNetworkAccess": "Enabled",
+                "capabilities": [
+                  {
+                    "name": "EnableServerless"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases",
+              "apiVersion": "2023-11-15",
+              "name": "[format('{0}/{1}', format('cosmos-{0}{1}', parameters('environmentName'), uniqueString(resourceGroup().id)), 'content-generation-db')]",
+              "properties": {
+                "resource": {
+                  "id": "content-generation-db"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DocumentDB/databaseAccounts', format('cosmos-{0}{1}', parameters('environmentName'), uniqueString(resourceGroup().id)))]"
+              ]
+            },
+            {
+              "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers",
+              "apiVersion": "2023-11-15",
+              "name": "[format('{0}/{1}/{2}', format('cosmos-{0}{1}', parameters('environmentName'), uniqueString(resourceGroup().id)), 'content-generation-db', 'chat-history')]",
+              "properties": {
+                "resource": {
+                  "id": "chat-history",
+                  "partitionKey": {
+                    "paths": [
+                      "/thread_id"
+                    ],
+                    "kind": "Hash"
+                  },
+                  "defaultTtl": 5184000,
+                  "indexingPolicy": {
+                    "indexingMode": "consistent",
+                    "automatic": true,
+                    "includedPaths": [
+                      {
+                        "path": "/*"
+                      }
+                    ],
+                    "excludedPaths": [
+                      {
+                        "path": "/\"_etag\"/?"
+                      }
+                    ]
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlDatabases', format('cosmos-{0}{1}', parameters('environmentName'), uniqueString(resourceGroup().id)), 'content-generation-db')]"
+              ]
+            },
+            {
+              "type": "Microsoft.ContainerRegistry/registries",
+              "apiVersion": "2023-07-01",
+              "name": "[format('cr{0}{1}', replace(parameters('environmentName'), '-', ''), uniqueString(resourceGroup().id))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "Basic"
+              },
+              "properties": {
+                "adminUserEnabled": true,
+                "publicNetworkAccess": "Enabled"
+              }
+            },
+            {
+              "type": "Microsoft.App/managedEnvironments",
+              "apiVersion": "2024-03-01",
+              "name": "[format('cae-{0}', parameters('environmentName'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "appLogsConfiguration": {
+                  "destination": "log-analytics",
+                  "logAnalyticsConfiguration": {
+                    "customerId": "[reference(resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}', parameters('environmentName'))), '2022-10-01').customerId]",
+                    "sharedKey": "[listKeys(resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}', parameters('environmentName'))), '2022-10-01').primarySharedKey]"
+                  }
+                },
+                "workloadProfiles": [
+                  {
+                    "name": "Consumption",
+                    "workloadProfileType": "Consumption"
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}', parameters('environmentName')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.MachineLearningServices/workspaces",
+              "apiVersion": "2024-04-01",
+              "name": "[format('aih-{0}', parameters('environmentName'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "Hub",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "friendlyName": "[format('AI Hub {0}', parameters('environmentName'))]",
+                "storageAccount": "[resourceId('Microsoft.Storage/storageAccounts', format('st{0}{1}', take(replace(parameters('environmentName'), '-', ''), 9), uniqueString(resourceGroup().id)))]",
+                "keyVault": "[resourceId('Microsoft.KeyVault/vaults', format('kv-{0}{1}', replace(parameters('environmentName'), '-', ''), uniqueString(resourceGroup().id)))]",
+                "applicationInsights": "[resourceId('Microsoft.Insights/components', format('appi-{0}', parameters('environmentName')))]",
+                "publicNetworkAccess": "Enabled"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/components', format('appi-{0}', parameters('environmentName')))]",
+                "[resourceId('Microsoft.KeyVault/vaults', format('kv-{0}{1}', replace(parameters('environmentName'), '-', ''), uniqueString(resourceGroup().id)))]",
+                "[resourceId('Microsoft.Storage/storageAccounts', format('st{0}{1}', take(replace(parameters('environmentName'), '-', ''), 9), uniqueString(resourceGroup().id)))]"
+              ]
+            },
+            {
+              "type": "Microsoft.KeyVault/vaults",
+              "apiVersion": "2023-07-01",
+              "name": "[format('kv-{0}{1}', replace(parameters('environmentName'), '-', ''), uniqueString(resourceGroup().id))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "sku": {
+                  "family": "A",
+                  "name": "standard"
+                },
+                "tenantId": "[subscription().tenantId]",
+                "enableRbacAuthorization": true,
+                "publicNetworkAccess": "Enabled"
+              }
+            },
+            {
+              "type": "Microsoft.MachineLearningServices/workspaces",
+              "apiVersion": "2024-04-01",
+              "name": "[format('aip-{0}', parameters('environmentName'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "Project",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "friendlyName": "[format('AI Project {0}', parameters('environmentName'))]",
+                "hubResourceId": "[resourceId('Microsoft.MachineLearningServices/workspaces', format('aih-{0}', parameters('environmentName')))]",
+                "publicNetworkAccess": "Enabled"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.MachineLearningServices/workspaces', format('aih-{0}', parameters('environmentName')))]"
+              ]
+            },
+            {
+              "condition": "[not(empty(parameters('principalId')))]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[format('Microsoft.Storage/storageAccounts/{0}', format('st{0}{1}', take(replace(parameters('environmentName'), '-', ''), 9), uniqueString(resourceGroup().id)))]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', format('st{0}{1}', take(replace(parameters('environmentName'), '-', ''), 9), uniqueString(resourceGroup().id))), parameters('principalId'), variables('storageRoleDefinitionId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageRoleDefinitionId'))]",
+                "principalId": "[parameters('principalId')]",
+                "principalType": "User"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', format('st{0}{1}', take(replace(parameters('environmentName'), '-', ''), 9), uniqueString(resourceGroup().id)))]"
+              ]
+            },
+            {
+              "condition": "[not(empty(parameters('principalId')))]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[format('Microsoft.Search/searchServices/{0}', format('srch-{0}', parameters('environmentName')))]",
+              "name": "[guid(resourceId('Microsoft.Search/searchServices', format('srch-{0}', parameters('environmentName'))), parameters('principalId'), variables('searchRoleDefinitionId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('searchRoleDefinitionId'))]",
+                "principalId": "[parameters('principalId')]",
+                "principalType": "User"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Search/searchServices', format('srch-{0}', parameters('environmentName')))]"
+              ]
+            },
+            {
+              "condition": "[not(empty(parameters('principalId')))]",
+              "type": "Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments",
+              "apiVersion": "2023-11-15",
+              "name": "[format('{0}/{1}', format('cosmos-{0}{1}', parameters('environmentName'), uniqueString(resourceGroup().id)), guid(resourceId('Microsoft.DocumentDB/databaseAccounts', format('cosmos-{0}{1}', parameters('environmentName'), uniqueString(resourceGroup().id))), parameters('principalId'), variables('cosmosRoleDefinitionId')))]",
+              "properties": {
+                "roleDefinitionId": "[format('/{0}/resourceGroups/{1}/providers/Microsoft.DocumentDB/databaseAccounts/{2}/sqlRoleDefinitions/{3}', subscription().id, resourceGroup().name, format('cosmos-{0}{1}', parameters('environmentName'), uniqueString(resourceGroup().id)), variables('cosmosRoleDefinitionId'))]",
+                "principalId": "[parameters('principalId')]",
+                "scope": "[resourceId('Microsoft.DocumentDB/databaseAccounts', format('cosmos-{0}{1}', parameters('environmentName'), uniqueString(resourceGroup().id)))]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DocumentDB/databaseAccounts', format('cosmos-{0}{1}', parameters('environmentName'), uniqueString(resourceGroup().id)))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2022-09-01",
+              "name": "planner-agent",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "name": {
+                    "value": "[format('ca-planner-{0}', parameters('environmentName'))]"
+                  },
+                  "location": {
+                    "value": "[parameters('location')]"
+                  },
+                  "tags": {
+                    "value": "[parameters('tags')]"
+                  },
+                  "containerAppsEnvironmentName": {
+                    "value": "[format('cae-{0}', parameters('environmentName'))]"
+                  },
+                  "containerRegistryName": {
+                    "value": "[format('cr{0}{1}', replace(parameters('environmentName'), '-', ''), uniqueString(resourceGroup().id))]"
+                  },
+                  "applicationInsightsName": {
+                    "value": "[format('appi-{0}', parameters('environmentName'))]"
+                  },
+                  "openAIEndpoint": {
+                    "value": "[parameters('existingOpenAIEndpoint')]"
+                  },
+                  "openAIKey": {
+                    "value": "[parameters('existingOpenAIKey')]"
+                  },
+                  "openAIDeploymentName": {
+                    "value": "[parameters('existingOpenAIDeploymentName')]"
+                  },
+                  "openAIApiVersion": {
+                    "value": "2024-12-01-preview"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.18.4.5664",
+                      "templateHash": "14637737822065532050"
+                    }
+                  },
+                  "parameters": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "location": {
+                      "type": "string",
+                      "defaultValue": "[resourceGroup().location]"
+                    },
+                    "tags": {
+                      "type": "object",
+                      "defaultValue": {}
+                    },
+                    "containerAppsEnvironmentName": {
+                      "type": "string"
+                    },
+                    "containerRegistryName": {
+                      "type": "string"
+                    },
+                    "applicationInsightsName": {
+                      "type": "string"
+                    },
+                    "openAIEndpoint": {
+                      "type": "string"
+                    },
+                    "openAIKey": {
+                      "type": "securestring"
+                    },
+                    "openAIDeploymentName": {
+                      "type": "string"
+                    },
+                    "openAIApiVersion": {
+                      "type": "string",
+                      "defaultValue": "2024-12-01-preview"
+                    },
+                    "imageName": {
+                      "type": "string",
+                      "defaultValue": ""
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.App/containerApps",
+                      "apiVersion": "2024-03-01",
+                      "name": "[parameters('name')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[union(parameters('tags'), createObject('azd-service-name', 'planner-agent'))]",
+                      "identity": {
+                        "type": "SystemAssigned"
+                      },
+                      "properties": {
+                        "managedEnvironmentId": "[resourceId('Microsoft.App/managedEnvironments', parameters('containerAppsEnvironmentName'))]",
+                        "configuration": {
+                          "activeRevisionsMode": "Single",
+                          "ingress": {
+                            "external": false,
+                            "targetPort": 8001,
+                            "transport": "http",
+                            "allowInsecure": false
+                          },
+                          "registries": [
+                            {
+                              "server": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('containerRegistryName')), '2023-07-01').loginServer]",
+                              "identity": "system"
+                            }
+                          ],
+                          "secrets": [
+                            {
+                              "name": "appinsights-connection-string",
+                              "value": "[reference(resourceId('Microsoft.Insights/components', parameters('applicationInsightsName')), '2020-02-02').ConnectionString]"
+                            },
+                            {
+                              "name": "openai-api-key",
+                              "value": "[parameters('openAIKey')]"
+                            }
+                          ]
+                        },
+                        "template": {
+                          "containers": [
+                            {
+                              "image": "[if(not(empty(parameters('imageName'))), parameters('imageName'), 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest')]",
+                              "name": "planner-agent",
+                              "env": [
+                                {
+                                  "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                                  "secretRef": "appinsights-connection-string"
+                                },
+                                {
+                                  "name": "AZURE_OPENAI_ENDPOINT",
+                                  "value": "[parameters('openAIEndpoint')]"
+                                },
+                                {
+                                  "name": "AZURE_OPENAI_API_KEY",
+                                  "secretRef": "openai-api-key"
+                                },
+                                {
+                                  "name": "AZURE_OPENAI_DEPLOYMENT_NAME",
+                                  "value": "[parameters('openAIDeploymentName')]"
+                                },
+                                {
+                                  "name": "AZURE_OPENAI_API_VERSION",
+                                  "value": "[parameters('openAIApiVersion')]"
+                                },
+                                {
+                                  "name": "AGENT_NAME",
+                                  "value": "planner"
+                                },
+                                {
+                                  "name": "AGENT_PORT",
+                                  "value": "8001"
+                                },
+                                {
+                                  "name": "ENVIRONMENT",
+                                  "value": "production"
+                                }
+                              ],
+                              "resources": {
+                                "cpu": "[json('0.5')]",
+                                "memory": "1Gi"
+                              },
+                              "probes": [
+                                {
+                                  "type": "Liveness",
+                                  "httpGet": {
+                                    "path": "/health",
+                                    "port": 8001
+                                  },
+                                  "initialDelaySeconds": 30,
+                                  "periodSeconds": 30
+                                },
+                                {
+                                  "type": "Readiness",
+                                  "httpGet": {
+                                    "path": "/health",
+                                    "port": 8001
+                                  },
+                                  "initialDelaySeconds": 10,
+                                  "periodSeconds": 10
+                                }
+                              ]
+                            }
+                          ],
+                          "scale": {
+                            "minReplicas": 1,
+                            "maxReplicas": 10,
+                            "rules": [
+                              {
+                                "name": "http-scaling",
+                                "http": {
+                                  "metadata": {
+                                    "concurrentRequests": "10"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "Microsoft.Authorization/roleAssignments",
+                      "apiVersion": "2022-04-01",
+                      "scope": "[format('Microsoft.ContainerRegistry/registries/{0}', parameters('containerRegistryName'))]",
+                      "name": "[guid(resourceId('Microsoft.App/containerApps', parameters('name')), resourceId('Microsoft.ContainerRegistry/registries', parameters('containerRegistryName')), 'AcrPull')]",
+                      "properties": {
+                        "principalId": "[reference(resourceId('Microsoft.App/containerApps', parameters('name')), '2024-03-01', 'full').identity.principalId]",
+                        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]",
+                        "principalType": "ServicePrincipal"
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.App/containerApps', parameters('name'))]"
+                      ]
+                    }
+                  ],
+                  "outputs": {
+                    "fqdn": {
+                      "type": "string",
+                      "value": "[reference(resourceId('Microsoft.App/containerApps', parameters('name')), '2024-03-01').configuration.ingress.fqdn]"
+                    },
+                    "name": {
+                      "type": "string",
+                      "value": "[parameters('name')]"
+                    },
+                    "uri": {
+                      "type": "string",
+                      "value": "[format('https://{0}', reference(resourceId('Microsoft.App/containerApps', parameters('name')), '2024-03-01').configuration.ingress.fqdn)]"
+                    },
+                    "id": {
+                      "type": "string",
+                      "value": "[resourceId('Microsoft.App/containerApps', parameters('name'))]"
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/components', format('appi-{0}', parameters('environmentName')))]",
+                "[resourceId('Microsoft.App/managedEnvironments', format('cae-{0}', parameters('environmentName')))]",
+                "[resourceId('Microsoft.ContainerRegistry/registries', format('cr{0}{1}', replace(parameters('environmentName'), '-', ''), uniqueString(resourceGroup().id)))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2022-09-01",
+              "name": "researcher-agent",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "name": {
+                    "value": "[format('ca-researcher-{0}', parameters('environmentName'))]"
+                  },
+                  "location": {
+                    "value": "[parameters('location')]"
+                  },
+                  "tags": {
+                    "value": "[parameters('tags')]"
+                  },
+                  "containerAppsEnvironmentName": {
+                    "value": "[format('cae-{0}', parameters('environmentName'))]"
+                  },
+                  "containerRegistryName": {
+                    "value": "[format('cr{0}{1}', replace(parameters('environmentName'), '-', ''), uniqueString(resourceGroup().id))]"
+                  },
+                  "applicationInsightsName": {
+                    "value": "[format('appi-{0}', parameters('environmentName'))]"
+                  },
+                  "searchServiceEndpoint": {
+                    "value": "[format('https://{0}.search.windows.net', format('srch-{0}', parameters('environmentName')))]"
+                  },
+                  "searchServiceKey": {
+                    "value": "[listAdminKeys(resourceId('Microsoft.Search/searchServices', format('srch-{0}', parameters('environmentName'))), '2023-11-01').primaryKey]"
+                  },
+                  "searchIndexName": {
+                    "value": "documents-index"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.18.4.5664",
+                      "templateHash": "10382223349019980831"
+                    }
+                  },
+                  "parameters": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "location": {
+                      "type": "string",
+                      "defaultValue": "[resourceGroup().location]"
+                    },
+                    "tags": {
+                      "type": "object",
+                      "defaultValue": {}
+                    },
+                    "containerAppsEnvironmentName": {
+                      "type": "string"
+                    },
+                    "containerRegistryName": {
+                      "type": "string"
+                    },
+                    "applicationInsightsName": {
+                      "type": "string"
+                    },
+                    "searchServiceEndpoint": {
+                      "type": "string"
+                    },
+                    "searchServiceKey": {
+                      "type": "securestring"
+                    },
+                    "searchIndexName": {
+                      "type": "string",
+                      "defaultValue": "documents-index"
+                    },
+                    "imageName": {
+                      "type": "string",
+                      "defaultValue": ""
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.App/containerApps",
+                      "apiVersion": "2024-03-01",
+                      "name": "[parameters('name')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[union(parameters('tags'), createObject('azd-service-name', 'researcher-agent'))]",
+                      "identity": {
+                        "type": "SystemAssigned"
+                      },
+                      "properties": {
+                        "managedEnvironmentId": "[resourceId('Microsoft.App/managedEnvironments', parameters('containerAppsEnvironmentName'))]",
+                        "configuration": {
+                          "activeRevisionsMode": "Single",
+                          "ingress": {
+                            "external": false,
+                            "targetPort": 8002,
+                            "transport": "http",
+                            "allowInsecure": false
+                          },
+                          "registries": [
+                            {
+                              "server": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('containerRegistryName')), '2023-07-01').loginServer]",
+                              "identity": "system"
+                            }
+                          ],
+                          "secrets": [
+                            {
+                              "name": "appinsights-connection-string",
+                              "value": "[reference(resourceId('Microsoft.Insights/components', parameters('applicationInsightsName')), '2020-02-02').ConnectionString]"
+                            },
+                            {
+                              "name": "search-service-key",
+                              "value": "[parameters('searchServiceKey')]"
+                            }
+                          ]
+                        },
+                        "template": {
+                          "containers": [
+                            {
+                              "image": "[if(not(empty(parameters('imageName'))), parameters('imageName'), 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest')]",
+                              "name": "researcher-agent",
+                              "env": [
+                                {
+                                  "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                                  "secretRef": "appinsights-connection-string"
+                                },
+                                {
+                                  "name": "AZURE_SEARCH_ENDPOINT",
+                                  "value": "[parameters('searchServiceEndpoint')]"
+                                },
+                                {
+                                  "name": "AZURE_SEARCH_ADMIN_KEY",
+                                  "secretRef": "search-service-key"
+                                },
+                                {
+                                  "name": "AZURE_SEARCH_INDEX_NAME",
+                                  "value": "[parameters('searchIndexName')]"
+                                },
+                                {
+                                  "name": "AGENT_NAME",
+                                  "value": "researcher"
+                                },
+                                {
+                                  "name": "AGENT_PORT",
+                                  "value": "8002"
+                                },
+                                {
+                                  "name": "ENVIRONMENT",
+                                  "value": "production"
+                                }
+                              ],
+                              "resources": {
+                                "cpu": "[json('0.5')]",
+                                "memory": "1Gi"
+                              },
+                              "probes": [
+                                {
+                                  "type": "Liveness",
+                                  "httpGet": {
+                                    "path": "/health",
+                                    "port": 8002
+                                  },
+                                  "initialDelaySeconds": 30,
+                                  "periodSeconds": 30
+                                },
+                                {
+                                  "type": "Readiness",
+                                  "httpGet": {
+                                    "path": "/health",
+                                    "port": 8002
+                                  },
+                                  "initialDelaySeconds": 10,
+                                  "periodSeconds": 10
+                                }
+                              ]
+                            }
+                          ],
+                          "scale": {
+                            "minReplicas": 1,
+                            "maxReplicas": 10,
+                            "rules": [
+                              {
+                                "name": "http-scaling",
+                                "http": {
+                                  "metadata": {
+                                    "concurrentRequests": "10"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "Microsoft.Authorization/roleAssignments",
+                      "apiVersion": "2022-04-01",
+                      "scope": "[format('Microsoft.ContainerRegistry/registries/{0}', parameters('containerRegistryName'))]",
+                      "name": "[guid(resourceId('Microsoft.App/containerApps', parameters('name')), resourceId('Microsoft.ContainerRegistry/registries', parameters('containerRegistryName')), 'AcrPull')]",
+                      "properties": {
+                        "principalId": "[reference(resourceId('Microsoft.App/containerApps', parameters('name')), '2024-03-01', 'full').identity.principalId]",
+                        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]",
+                        "principalType": "ServicePrincipal"
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.App/containerApps', parameters('name'))]"
+                      ]
+                    }
+                  ],
+                  "outputs": {
+                    "fqdn": {
+                      "type": "string",
+                      "value": "[reference(resourceId('Microsoft.App/containerApps', parameters('name')), '2024-03-01').configuration.ingress.fqdn]"
+                    },
+                    "name": {
+                      "type": "string",
+                      "value": "[parameters('name')]"
+                    },
+                    "uri": {
+                      "type": "string",
+                      "value": "[format('https://{0}', reference(resourceId('Microsoft.App/containerApps', parameters('name')), '2024-03-01').configuration.ingress.fqdn)]"
+                    },
+                    "id": {
+                      "type": "string",
+                      "value": "[resourceId('Microsoft.App/containerApps', parameters('name'))]"
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/components', format('appi-{0}', parameters('environmentName')))]",
+                "[resourceId('Microsoft.App/managedEnvironments', format('cae-{0}', parameters('environmentName')))]",
+                "[resourceId('Microsoft.ContainerRegistry/registries', format('cr{0}{1}', replace(parameters('environmentName'), '-', ''), uniqueString(resourceGroup().id)))]",
+                "[resourceId('Microsoft.Search/searchServices', format('srch-{0}', parameters('environmentName')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2022-09-01",
+              "name": "writer-agent",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "name": {
+                    "value": "[format('ca-writer-{0}', parameters('environmentName'))]"
+                  },
+                  "location": {
+                    "value": "[parameters('location')]"
+                  },
+                  "tags": {
+                    "value": "[parameters('tags')]"
+                  },
+                  "containerAppsEnvironmentName": {
+                    "value": "[format('cae-{0}', parameters('environmentName'))]"
+                  },
+                  "containerRegistryName": {
+                    "value": "[format('cr{0}{1}', replace(parameters('environmentName'), '-', ''), uniqueString(resourceGroup().id))]"
+                  },
+                  "applicationInsightsName": {
+                    "value": "[format('appi-{0}', parameters('environmentName'))]"
+                  },
+                  "openAIEndpoint": {
+                    "value": "[parameters('existingOpenAIEndpoint')]"
+                  },
+                  "openAIKey": {
+                    "value": "[parameters('existingOpenAIKey')]"
+                  },
+                  "openAIDeploymentName": {
+                    "value": "[parameters('existingOpenAIDeploymentName')]"
+                  },
+                  "openAIApiVersion": {
+                    "value": "2024-12-01-preview"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.18.4.5664",
+                      "templateHash": "12293880017201259719"
+                    }
+                  },
+                  "parameters": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "location": {
+                      "type": "string",
+                      "defaultValue": "[resourceGroup().location]"
+                    },
+                    "tags": {
+                      "type": "object",
+                      "defaultValue": {}
+                    },
+                    "containerAppsEnvironmentName": {
+                      "type": "string"
+                    },
+                    "containerRegistryName": {
+                      "type": "string"
+                    },
+                    "applicationInsightsName": {
+                      "type": "string"
+                    },
+                    "openAIEndpoint": {
+                      "type": "string"
+                    },
+                    "openAIKey": {
+                      "type": "securestring"
+                    },
+                    "openAIDeploymentName": {
+                      "type": "string"
+                    },
+                    "openAIApiVersion": {
+                      "type": "string",
+                      "defaultValue": "2024-12-01-preview"
+                    },
+                    "imageName": {
+                      "type": "string",
+                      "defaultValue": ""
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.App/containerApps",
+                      "apiVersion": "2024-03-01",
+                      "name": "[parameters('name')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[union(parameters('tags'), createObject('azd-service-name', 'writer-agent'))]",
+                      "identity": {
+                        "type": "SystemAssigned"
+                      },
+                      "properties": {
+                        "managedEnvironmentId": "[resourceId('Microsoft.App/managedEnvironments', parameters('containerAppsEnvironmentName'))]",
+                        "configuration": {
+                          "activeRevisionsMode": "Single",
+                          "ingress": {
+                            "external": false,
+                            "targetPort": 8003,
+                            "transport": "http",
+                            "allowInsecure": false
+                          },
+                          "registries": [
+                            {
+                              "server": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('containerRegistryName')), '2023-07-01').loginServer]",
+                              "identity": "system"
+                            }
+                          ],
+                          "secrets": [
+                            {
+                              "name": "appinsights-connection-string",
+                              "value": "[reference(resourceId('Microsoft.Insights/components', parameters('applicationInsightsName')), '2020-02-02').ConnectionString]"
+                            },
+                            {
+                              "name": "openai-api-key",
+                              "value": "[parameters('openAIKey')]"
+                            }
+                          ]
+                        },
+                        "template": {
+                          "containers": [
+                            {
+                              "image": "[if(not(empty(parameters('imageName'))), parameters('imageName'), 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest')]",
+                              "name": "writer-agent",
+                              "env": [
+                                {
+                                  "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                                  "secretRef": "appinsights-connection-string"
+                                },
+                                {
+                                  "name": "AZURE_OPENAI_ENDPOINT",
+                                  "value": "[parameters('openAIEndpoint')]"
+                                },
+                                {
+                                  "name": "AZURE_OPENAI_API_KEY",
+                                  "secretRef": "openai-api-key"
+                                },
+                                {
+                                  "name": "AZURE_OPENAI_DEPLOYMENT_NAME",
+                                  "value": "[parameters('openAIDeploymentName')]"
+                                },
+                                {
+                                  "name": "AZURE_OPENAI_API_VERSION",
+                                  "value": "[parameters('openAIApiVersion')]"
+                                },
+                                {
+                                  "name": "AGENT_NAME",
+                                  "value": "writer"
+                                },
+                                {
+                                  "name": "AGENT_PORT",
+                                  "value": "8003"
+                                },
+                                {
+                                  "name": "ENVIRONMENT",
+                                  "value": "production"
+                                }
+                              ],
+                              "resources": {
+                                "cpu": "[json('0.5')]",
+                                "memory": "1Gi"
+                              },
+                              "probes": [
+                                {
+                                  "type": "Liveness",
+                                  "httpGet": {
+                                    "path": "/health",
+                                    "port": 8003
+                                  },
+                                  "initialDelaySeconds": 30,
+                                  "periodSeconds": 30
+                                },
+                                {
+                                  "type": "Readiness",
+                                  "httpGet": {
+                                    "path": "/health",
+                                    "port": 8003
+                                  },
+                                  "initialDelaySeconds": 10,
+                                  "periodSeconds": 10
+                                }
+                              ]
+                            }
+                          ],
+                          "scale": {
+                            "minReplicas": 1,
+                            "maxReplicas": 10,
+                            "rules": [
+                              {
+                                "name": "http-scaling",
+                                "http": {
+                                  "metadata": {
+                                    "concurrentRequests": "10"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "Microsoft.Authorization/roleAssignments",
+                      "apiVersion": "2022-04-01",
+                      "scope": "[format('Microsoft.ContainerRegistry/registries/{0}', parameters('containerRegistryName'))]",
+                      "name": "[guid(resourceId('Microsoft.App/containerApps', parameters('name')), resourceId('Microsoft.ContainerRegistry/registries', parameters('containerRegistryName')), 'AcrPull')]",
+                      "properties": {
+                        "principalId": "[reference(resourceId('Microsoft.App/containerApps', parameters('name')), '2024-03-01', 'full').identity.principalId]",
+                        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]",
+                        "principalType": "ServicePrincipal"
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.App/containerApps', parameters('name'))]"
+                      ]
+                    }
+                  ],
+                  "outputs": {
+                    "fqdn": {
+                      "type": "string",
+                      "value": "[reference(resourceId('Microsoft.App/containerApps', parameters('name')), '2024-03-01').configuration.ingress.fqdn]"
+                    },
+                    "name": {
+                      "type": "string",
+                      "value": "[parameters('name')]"
+                    },
+                    "uri": {
+                      "type": "string",
+                      "value": "[format('https://{0}', reference(resourceId('Microsoft.App/containerApps', parameters('name')), '2024-03-01').configuration.ingress.fqdn)]"
+                    },
+                    "id": {
+                      "type": "string",
+                      "value": "[resourceId('Microsoft.App/containerApps', parameters('name'))]"
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/components', format('appi-{0}', parameters('environmentName')))]",
+                "[resourceId('Microsoft.App/managedEnvironments', format('cae-{0}', parameters('environmentName')))]",
+                "[resourceId('Microsoft.ContainerRegistry/registries', format('cr{0}{1}', replace(parameters('environmentName'), '-', ''), uniqueString(resourceGroup().id)))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2022-09-01",
+              "name": "reviewer-agent",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "name": {
+                    "value": "[format('ca-reviewer-{0}', parameters('environmentName'))]"
+                  },
+                  "location": {
+                    "value": "[parameters('location')]"
+                  },
+                  "tags": {
+                    "value": "[parameters('tags')]"
+                  },
+                  "containerAppsEnvironmentName": {
+                    "value": "[format('cae-{0}', parameters('environmentName'))]"
+                  },
+                  "containerRegistryName": {
+                    "value": "[format('cr{0}{1}', replace(parameters('environmentName'), '-', ''), uniqueString(resourceGroup().id))]"
+                  },
+                  "applicationInsightsName": {
+                    "value": "[format('appi-{0}', parameters('environmentName'))]"
+                  },
+                  "openAIEndpoint": {
+                    "value": "[parameters('existingOpenAIEndpoint')]"
+                  },
+                  "openAIKey": {
+                    "value": "[parameters('existingOpenAIKey')]"
+                  },
+                  "openAIDeploymentName": {
+                    "value": "[parameters('existingOpenAIDeploymentName')]"
+                  },
+                  "openAIApiVersion": {
+                    "value": "2024-12-01-preview"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.18.4.5664",
+                      "templateHash": "17297897672274531493"
+                    }
+                  },
+                  "parameters": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "location": {
+                      "type": "string",
+                      "defaultValue": "[resourceGroup().location]"
+                    },
+                    "tags": {
+                      "type": "object",
+                      "defaultValue": {}
+                    },
+                    "containerAppsEnvironmentName": {
+                      "type": "string"
+                    },
+                    "containerRegistryName": {
+                      "type": "string"
+                    },
+                    "applicationInsightsName": {
+                      "type": "string"
+                    },
+                    "openAIEndpoint": {
+                      "type": "string"
+                    },
+                    "openAIKey": {
+                      "type": "securestring"
+                    },
+                    "openAIDeploymentName": {
+                      "type": "string"
+                    },
+                    "openAIApiVersion": {
+                      "type": "string",
+                      "defaultValue": "2024-12-01-preview"
+                    },
+                    "imageName": {
+                      "type": "string",
+                      "defaultValue": ""
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.App/containerApps",
+                      "apiVersion": "2024-03-01",
+                      "name": "[parameters('name')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[union(parameters('tags'), createObject('azd-service-name', 'reviewer-agent'))]",
+                      "identity": {
+                        "type": "SystemAssigned"
+                      },
+                      "properties": {
+                        "managedEnvironmentId": "[resourceId('Microsoft.App/managedEnvironments', parameters('containerAppsEnvironmentName'))]",
+                        "configuration": {
+                          "activeRevisionsMode": "Single",
+                          "ingress": {
+                            "external": false,
+                            "targetPort": 8004,
+                            "transport": "http",
+                            "allowInsecure": false
+                          },
+                          "registries": [
+                            {
+                              "server": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('containerRegistryName')), '2023-07-01').loginServer]",
+                              "identity": "system"
+                            }
+                          ],
+                          "secrets": [
+                            {
+                              "name": "appinsights-connection-string",
+                              "value": "[reference(resourceId('Microsoft.Insights/components', parameters('applicationInsightsName')), '2020-02-02').ConnectionString]"
+                            },
+                            {
+                              "name": "openai-api-key",
+                              "value": "[parameters('openAIKey')]"
+                            }
+                          ]
+                        },
+                        "template": {
+                          "containers": [
+                            {
+                              "image": "[if(not(empty(parameters('imageName'))), parameters('imageName'), 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest')]",
+                              "name": "reviewer-agent",
+                              "env": [
+                                {
+                                  "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                                  "secretRef": "appinsights-connection-string"
+                                },
+                                {
+                                  "name": "AZURE_OPENAI_ENDPOINT",
+                                  "value": "[parameters('openAIEndpoint')]"
+                                },
+                                {
+                                  "name": "AZURE_OPENAI_API_KEY",
+                                  "secretRef": "openai-api-key"
+                                },
+                                {
+                                  "name": "AZURE_OPENAI_DEPLOYMENT_NAME",
+                                  "value": "[parameters('openAIDeploymentName')]"
+                                },
+                                {
+                                  "name": "AZURE_OPENAI_API_VERSION",
+                                  "value": "[parameters('openAIApiVersion')]"
+                                },
+                                {
+                                  "name": "AGENT_NAME",
+                                  "value": "reviewer"
+                                },
+                                {
+                                  "name": "AGENT_PORT",
+                                  "value": "8004"
+                                },
+                                {
+                                  "name": "ENVIRONMENT",
+                                  "value": "production"
+                                }
+                              ],
+                              "resources": {
+                                "cpu": "[json('0.5')]",
+                                "memory": "1Gi"
+                              },
+                              "probes": [
+                                {
+                                  "type": "Liveness",
+                                  "httpGet": {
+                                    "path": "/health",
+                                    "port": 8004
+                                  },
+                                  "initialDelaySeconds": 30,
+                                  "periodSeconds": 30
+                                },
+                                {
+                                  "type": "Readiness",
+                                  "httpGet": {
+                                    "path": "/health",
+                                    "port": 8004
+                                  },
+                                  "initialDelaySeconds": 10,
+                                  "periodSeconds": 10
+                                }
+                              ]
+                            }
+                          ],
+                          "scale": {
+                            "minReplicas": 1,
+                            "maxReplicas": 10,
+                            "rules": [
+                              {
+                                "name": "http-scaling",
+                                "http": {
+                                  "metadata": {
+                                    "concurrentRequests": "10"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "Microsoft.Authorization/roleAssignments",
+                      "apiVersion": "2022-04-01",
+                      "scope": "[format('Microsoft.ContainerRegistry/registries/{0}', parameters('containerRegistryName'))]",
+                      "name": "[guid(resourceId('Microsoft.App/containerApps', parameters('name')), resourceId('Microsoft.ContainerRegistry/registries', parameters('containerRegistryName')), 'AcrPull')]",
+                      "properties": {
+                        "principalId": "[reference(resourceId('Microsoft.App/containerApps', parameters('name')), '2024-03-01', 'full').identity.principalId]",
+                        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]",
+                        "principalType": "ServicePrincipal"
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.App/containerApps', parameters('name'))]"
+                      ]
+                    }
+                  ],
+                  "outputs": {
+                    "fqdn": {
+                      "type": "string",
+                      "value": "[reference(resourceId('Microsoft.App/containerApps', parameters('name')), '2024-03-01').configuration.ingress.fqdn]"
+                    },
+                    "name": {
+                      "type": "string",
+                      "value": "[parameters('name')]"
+                    },
+                    "uri": {
+                      "type": "string",
+                      "value": "[format('https://{0}', reference(resourceId('Microsoft.App/containerApps', parameters('name')), '2024-03-01').configuration.ingress.fqdn)]"
+                    },
+                    "id": {
+                      "type": "string",
+                      "value": "[resourceId('Microsoft.App/containerApps', parameters('name'))]"
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/components', format('appi-{0}', parameters('environmentName')))]",
+                "[resourceId('Microsoft.App/managedEnvironments', format('cae-{0}', parameters('environmentName')))]",
+                "[resourceId('Microsoft.ContainerRegistry/registries', format('cr{0}{1}', replace(parameters('environmentName'), '-', ''), uniqueString(resourceGroup().id)))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2022-09-01",
+              "name": "supervisor-agent",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "name": {
+                    "value": "[format('ca-supervisor-{0}', parameters('environmentName'))]"
+                  },
+                  "location": {
+                    "value": "[parameters('location')]"
+                  },
+                  "tags": {
+                    "value": "[parameters('tags')]"
+                  },
+                  "containerAppsEnvironmentName": {
+                    "value": "[format('cae-{0}', parameters('environmentName'))]"
+                  },
+                  "containerRegistryName": {
+                    "value": "[format('cr{0}{1}', replace(parameters('environmentName'), '-', ''), uniqueString(resourceGroup().id))]"
+                  },
+                  "applicationInsightsName": {
+                    "value": "[format('appi-{0}', parameters('environmentName'))]"
+                  },
+                  "openAIEndpoint": {
+                    "value": "[parameters('existingOpenAIEndpoint')]"
+                  },
+                  "openAIKey": {
+                    "value": "[parameters('existingOpenAIKey')]"
+                  },
+                  "openAIDeploymentName": {
+                    "value": "[parameters('existingOpenAIDeploymentName')]"
+                  },
+                  "openAIApiVersion": {
+                    "value": "2024-12-01-preview"
+                  },
+                  "plannerServiceUrl": {
+                    "value": "[reference(resourceId('Microsoft.Resources/deployments', 'planner-agent'), '2022-09-01').outputs.uri.value]"
+                  },
+                  "researcherServiceUrl": {
+                    "value": "[reference(resourceId('Microsoft.Resources/deployments', 'researcher-agent'), '2022-09-01').outputs.uri.value]"
+                  },
+                  "writerServiceUrl": {
+                    "value": "[reference(resourceId('Microsoft.Resources/deployments', 'writer-agent'), '2022-09-01').outputs.uri.value]"
+                  },
+                  "reviewerServiceUrl": {
+                    "value": "[reference(resourceId('Microsoft.Resources/deployments', 'reviewer-agent'), '2022-09-01').outputs.uri.value]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.18.4.5664",
+                      "templateHash": "5174483100766350789"
+                    }
+                  },
+                  "parameters": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "location": {
+                      "type": "string",
+                      "defaultValue": "[resourceGroup().location]"
+                    },
+                    "tags": {
+                      "type": "object",
+                      "defaultValue": {}
+                    },
+                    "containerAppsEnvironmentName": {
+                      "type": "string"
+                    },
+                    "containerRegistryName": {
+                      "type": "string"
+                    },
+                    "applicationInsightsName": {
+                      "type": "string"
+                    },
+                    "openAIEndpoint": {
+                      "type": "string"
+                    },
+                    "openAIKey": {
+                      "type": "securestring"
+                    },
+                    "openAIDeploymentName": {
+                      "type": "string"
+                    },
+                    "openAIApiVersion": {
+                      "type": "string",
+                      "defaultValue": "2024-12-01-preview"
+                    },
+                    "imageName": {
+                      "type": "string",
+                      "defaultValue": ""
+                    },
+                    "plannerServiceUrl": {
+                      "type": "string",
+                      "defaultValue": ""
+                    },
+                    "researcherServiceUrl": {
+                      "type": "string",
+                      "defaultValue": ""
+                    },
+                    "writerServiceUrl": {
+                      "type": "string",
+                      "defaultValue": ""
+                    },
+                    "reviewerServiceUrl": {
+                      "type": "string",
+                      "defaultValue": ""
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.App/containerApps",
+                      "apiVersion": "2024-03-01",
+                      "name": "[parameters('name')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[union(parameters('tags'), createObject('azd-service-name', 'supervisor-agent'))]",
+                      "identity": {
+                        "type": "SystemAssigned"
+                      },
+                      "properties": {
+                        "managedEnvironmentId": "[resourceId('Microsoft.App/managedEnvironments', parameters('containerAppsEnvironmentName'))]",
+                        "configuration": {
+                          "activeRevisionsMode": "Single",
+                          "ingress": {
+                            "external": true,
+                            "targetPort": 8005,
+                            "transport": "http",
+                            "allowInsecure": false,
+                            "corsPolicy": {
+                              "allowedOrigins": [
+                                "*"
+                              ],
+                              "allowedMethods": [
+                                "GET",
+                                "POST",
+                                "OPTIONS"
+                              ],
+                              "allowedHeaders": [
+                                "*"
+                              ]
+                            }
+                          },
+                          "registries": [
+                            {
+                              "server": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('containerRegistryName')), '2023-07-01').loginServer]",
+                              "identity": "system"
+                            }
+                          ],
+                          "secrets": [
+                            {
+                              "name": "appinsights-connection-string",
+                              "value": "[reference(resourceId('Microsoft.Insights/components', parameters('applicationInsightsName')), '2020-02-02').ConnectionString]"
+                            },
+                            {
+                              "name": "openai-api-key",
+                              "value": "[parameters('openAIKey')]"
+                            }
+                          ]
+                        },
+                        "template": {
+                          "containers": [
+                            {
+                              "image": "[if(not(empty(parameters('imageName'))), parameters('imageName'), 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest')]",
+                              "name": "supervisor-agent",
+                              "env": [
+                                {
+                                  "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                                  "secretRef": "appinsights-connection-string"
+                                },
+                                {
+                                  "name": "AZURE_OPENAI_ENDPOINT",
+                                  "value": "[parameters('openAIEndpoint')]"
+                                },
+                                {
+                                  "name": "AZURE_OPENAI_API_KEY",
+                                  "secretRef": "openai-api-key"
+                                },
+                                {
+                                  "name": "AZURE_OPENAI_DEPLOYMENT_NAME",
+                                  "value": "[parameters('openAIDeploymentName')]"
+                                },
+                                {
+                                  "name": "AZURE_OPENAI_API_VERSION",
+                                  "value": "[parameters('openAIApiVersion')]"
+                                },
+                                {
+                                  "name": "AGENT_NAME",
+                                  "value": "supervisor"
+                                },
+                                {
+                                  "name": "AGENT_PORT",
+                                  "value": "8005"
+                                },
+                                {
+                                  "name": "PLANNER_SERVICE_URL",
+                                  "value": "[parameters('plannerServiceUrl')]"
+                                },
+                                {
+                                  "name": "RESEARCHER_SERVICE_URL",
+                                  "value": "[parameters('researcherServiceUrl')]"
+                                },
+                                {
+                                  "name": "WRITER_SERVICE_URL",
+                                  "value": "[parameters('writerServiceUrl')]"
+                                },
+                                {
+                                  "name": "REVIEWER_SERVICE_URL",
+                                  "value": "[parameters('reviewerServiceUrl')]"
+                                },
+                                {
+                                  "name": "ENVIRONMENT",
+                                  "value": "production"
+                                }
+                              ],
+                              "resources": {
+                                "cpu": "[json('0.5')]",
+                                "memory": "1Gi"
+                              },
+                              "probes": [
+                                {
+                                  "type": "Liveness",
+                                  "httpGet": {
+                                    "path": "/health",
+                                    "port": 8005
+                                  },
+                                  "initialDelaySeconds": 30,
+                                  "periodSeconds": 30
+                                },
+                                {
+                                  "type": "Readiness",
+                                  "httpGet": {
+                                    "path": "/health",
+                                    "port": 8005
+                                  },
+                                  "initialDelaySeconds": 10,
+                                  "periodSeconds": 10
+                                }
+                              ]
+                            }
+                          ],
+                          "scale": {
+                            "minReplicas": 1,
+                            "maxReplicas": 10,
+                            "rules": [
+                              {
+                                "name": "http-scaling",
+                                "http": {
+                                  "metadata": {
+                                    "concurrentRequests": "10"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "Microsoft.Authorization/roleAssignments",
+                      "apiVersion": "2022-04-01",
+                      "scope": "[format('Microsoft.ContainerRegistry/registries/{0}', parameters('containerRegistryName'))]",
+                      "name": "[guid(resourceId('Microsoft.App/containerApps', parameters('name')), resourceId('Microsoft.ContainerRegistry/registries', parameters('containerRegistryName')), 'AcrPull')]",
+                      "properties": {
+                        "principalId": "[reference(resourceId('Microsoft.App/containerApps', parameters('name')), '2024-03-01', 'full').identity.principalId]",
+                        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]",
+                        "principalType": "ServicePrincipal"
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.App/containerApps', parameters('name'))]"
+                      ]
+                    }
+                  ],
+                  "outputs": {
+                    "fqdn": {
+                      "type": "string",
+                      "value": "[reference(resourceId('Microsoft.App/containerApps', parameters('name')), '2024-03-01').configuration.ingress.fqdn]"
+                    },
+                    "name": {
+                      "type": "string",
+                      "value": "[parameters('name')]"
+                    },
+                    "uri": {
+                      "type": "string",
+                      "value": "[format('https://{0}', reference(resourceId('Microsoft.App/containerApps', parameters('name')), '2024-03-01').configuration.ingress.fqdn)]"
+                    },
+                    "id": {
+                      "type": "string",
+                      "value": "[resourceId('Microsoft.App/containerApps', parameters('name'))]"
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/components', format('appi-{0}', parameters('environmentName')))]",
+                "[resourceId('Microsoft.App/managedEnvironments', format('cae-{0}', parameters('environmentName')))]",
+                "[resourceId('Microsoft.ContainerRegistry/registries', format('cr{0}{1}', replace(parameters('environmentName'), '-', ''), uniqueString(resourceGroup().id)))]",
+                "[resourceId('Microsoft.Resources/deployments', 'planner-agent')]",
+                "[resourceId('Microsoft.Resources/deployments', 'researcher-agent')]",
+                "[resourceId('Microsoft.Resources/deployments', 'reviewer-agent')]",
+                "[resourceId('Microsoft.Resources/deployments', 'writer-agent')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2022-09-01",
+              "name": "orchestrator-api",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "name": {
+                    "value": "[format('ca-orchestrator-{0}', parameters('environmentName'))]"
+                  },
+                  "location": {
+                    "value": "[parameters('location')]"
+                  },
+                  "tags": {
+                    "value": "[parameters('tags')]"
+                  },
+                  "containerAppsEnvironmentName": {
+                    "value": "[format('cae-{0}', parameters('environmentName'))]"
+                  },
+                  "containerRegistryName": {
+                    "value": "[format('cr{0}{1}', replace(parameters('environmentName'), '-', ''), uniqueString(resourceGroup().id))]"
+                  },
+                  "applicationInsightsName": {
+                    "value": "[format('appi-{0}', parameters('environmentName'))]"
+                  },
+                  "storageAccountName": {
+                    "value": "[format('st{0}{1}', take(replace(parameters('environmentName'), '-', ''), 9), uniqueString(resourceGroup().id))]"
+                  },
+                  "searchServiceName": {
+                    "value": "[format('srch-{0}', parameters('environmentName'))]"
+                  },
+                  "openAIEndpoint": {
+                    "value": "[parameters('existingOpenAIEndpoint')]"
+                  },
+                  "openAIKey": {
+                    "value": "[parameters('existingOpenAIKey')]"
+                  },
+                  "openAIDeploymentName": {
+                    "value": "[parameters('existingOpenAIDeploymentName')]"
+                  },
+                  "openAIApiVersion": {
+                    "value": "2024-12-01-preview"
+                  },
+                  "plannerServiceUrl": {
+                    "value": "[reference(resourceId('Microsoft.Resources/deployments', 'planner-agent'), '2022-09-01').outputs.uri.value]"
+                  },
+                  "researcherServiceUrl": {
+                    "value": "[reference(resourceId('Microsoft.Resources/deployments', 'researcher-agent'), '2022-09-01').outputs.uri.value]"
+                  },
+                  "writerServiceUrl": {
+                    "value": "[reference(resourceId('Microsoft.Resources/deployments', 'writer-agent'), '2022-09-01').outputs.uri.value]"
+                  },
+                  "reviewerServiceUrl": {
+                    "value": "[reference(resourceId('Microsoft.Resources/deployments', 'reviewer-agent'), '2022-09-01').outputs.uri.value]"
+                  },
+                  "supervisorServiceUrl": {
+                    "value": "[reference(resourceId('Microsoft.Resources/deployments', 'supervisor-agent'), '2022-09-01').outputs.uri.value]"
+                  },
+                  "cosmosEndpoint": {
+                    "value": "[reference(resourceId('Microsoft.DocumentDB/databaseAccounts', format('cosmos-{0}{1}', parameters('environmentName'), uniqueString(resourceGroup().id))), '2023-11-15').documentEndpoint]"
+                  },
+                  "cosmosPrimaryKey": {
+                    "value": "[listKeys(resourceId('Microsoft.DocumentDB/databaseAccounts', format('cosmos-{0}{1}', parameters('environmentName'), uniqueString(resourceGroup().id))), '2023-11-15').primaryMasterKey]"
+                  },
+                  "cosmosDatabaseName": {
+                    "value": "content-generation-db"
+                  },
+                  "cosmosContainerName": {
+                    "value": "chat-history"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.18.4.5664",
+                      "templateHash": "9754562940432449827"
+                    }
+                  },
+                  "parameters": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "location": {
+                      "type": "string",
+                      "defaultValue": "[resourceGroup().location]"
+                    },
+                    "tags": {
+                      "type": "object",
+                      "defaultValue": {}
+                    },
+                    "containerAppsEnvironmentName": {
+                      "type": "string"
+                    },
+                    "containerRegistryName": {
+                      "type": "string"
+                    },
+                    "applicationInsightsName": {
+                      "type": "string"
+                    },
+                    "storageAccountName": {
+                      "type": "string"
+                    },
+                    "searchServiceName": {
+                      "type": "string"
+                    },
+                    "openAIEndpoint": {
+                      "type": "string",
+                      "defaultValue": ""
+                    },
+                    "openAIKey": {
+                      "type": "securestring",
+                      "defaultValue": ""
+                    },
+                    "openAIDeploymentName": {
+                      "type": "string",
+                      "defaultValue": ""
+                    },
+                    "openAIApiVersion": {
+                      "type": "string",
+                      "defaultValue": "2024-12-01-preview"
+                    },
+                    "plannerServiceUrl": {
+                      "type": "string",
+                      "defaultValue": ""
+                    },
+                    "researcherServiceUrl": {
+                      "type": "string",
+                      "defaultValue": ""
+                    },
+                    "writerServiceUrl": {
+                      "type": "string",
+                      "defaultValue": ""
+                    },
+                    "reviewerServiceUrl": {
+                      "type": "string",
+                      "defaultValue": ""
+                    },
+                    "supervisorServiceUrl": {
+                      "type": "string",
+                      "defaultValue": ""
+                    },
+                    "cosmosEndpoint": {
+                      "type": "string",
+                      "defaultValue": ""
+                    },
+                    "cosmosPrimaryKey": {
+                      "type": "securestring",
+                      "defaultValue": ""
+                    },
+                    "cosmosDatabaseName": {
+                      "type": "string",
+                      "defaultValue": ""
+                    },
+                    "cosmosContainerName": {
+                      "type": "string",
+                      "defaultValue": ""
+                    },
+                    "imageName": {
+                      "type": "string",
+                      "defaultValue": ""
+                    }
+                  },
+                  "variables": {
+                    "acrPullRoleDefinitionId": "7f951dda-4ed3-4680-a7ca-43fe172d538d"
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.App/containerApps",
+                      "apiVersion": "2024-03-01",
+                      "name": "[parameters('name')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[union(parameters('tags'), createObject('azd-service-name', 'orchestrator-api'))]",
+                      "identity": {
+                        "type": "SystemAssigned"
+                      },
+                      "properties": {
+                        "managedEnvironmentId": "[resourceId('Microsoft.App/managedEnvironments', parameters('containerAppsEnvironmentName'))]",
+                        "configuration": {
+                          "activeRevisionsMode": "Single",
+                          "ingress": {
+                            "external": true,
+                            "targetPort": 8000,
+                            "transport": "auto",
+                            "corsPolicy": {
+                              "allowedOrigins": [
+                                "*"
+                              ],
+                              "allowedMethods": [
+                                "GET",
+                                "POST",
+                                "PUT",
+                                "DELETE",
+                                "OPTIONS"
+                              ],
+                              "allowedHeaders": [
+                                "*"
+                              ]
+                            }
+                          },
+                          "registries": [
+                            {
+                              "server": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('containerRegistryName')), '2023-07-01').loginServer]",
+                              "identity": "system"
+                            }
+                          ],
+                          "secrets": [
+                            {
+                              "name": "appinsights-connection-string",
+                              "value": "[reference(resourceId('Microsoft.Insights/components', parameters('applicationInsightsName')), '2020-02-02').ConnectionString]"
+                            },
+                            {
+                              "name": "storage-connection-string",
+                              "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix=core.windows.net', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value)]"
+                            },
+                            {
+                              "name": "search-admin-key",
+                              "value": "[listAdminKeys(resourceId('Microsoft.Search/searchServices', parameters('searchServiceName')), '2023-11-01').primaryKey]"
+                            },
+                            {
+                              "name": "cosmos-primary-key",
+                              "value": "[parameters('cosmosPrimaryKey')]"
+                            },
+                            {
+                              "name": "openai-api-key",
+                              "value": "[parameters('openAIKey')]"
+                            }
+                          ]
+                        },
+                        "template": {
+                          "containers": [
+                            {
+                              "image": "[if(not(empty(parameters('imageName'))), parameters('imageName'), 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest')]",
+                              "name": "orchestrator-api",
+                              "env": [
+                                {
+                                  "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                                  "secretRef": "appinsights-connection-string"
+                                },
+                                {
+                                  "name": "AZURE_STORAGE_CONNECTION_STRING",
+                                  "secretRef": "storage-connection-string"
+                                },
+                                {
+                                  "name": "AZURE_SEARCH_ADMIN_KEY",
+                                  "secretRef": "search-admin-key"
+                                },
+                                {
+                                  "name": "AZURE_SEARCH_ENDPOINT",
+                                  "value": "[format('https://{0}.search.windows.net', parameters('searchServiceName'))]"
+                                },
+                                {
+                                  "name": "AZURE_STORAGE_ACCOUNT_NAME",
+                                  "value": "[parameters('storageAccountName')]"
+                                },
+                                {
+                                  "name": "AZURE_OPENAI_ENDPOINT",
+                                  "value": "[parameters('openAIEndpoint')]"
+                                },
+                                {
+                                  "name": "AZURE_OPENAI_API_KEY",
+                                  "secretRef": "openai-api-key"
+                                },
+                                {
+                                  "name": "AZURE_OPENAI_DEPLOYMENT_NAME",
+                                  "value": "[parameters('openAIDeploymentName')]"
+                                },
+                                {
+                                  "name": "AZURE_OPENAI_API_VERSION",
+                                  "value": "[parameters('openAIApiVersion')]"
+                                },
+                                {
+                                  "name": "PLANNER_SERVICE_URL",
+                                  "value": "[parameters('plannerServiceUrl')]"
+                                },
+                                {
+                                  "name": "RESEARCHER_SERVICE_URL",
+                                  "value": "[parameters('researcherServiceUrl')]"
+                                },
+                                {
+                                  "name": "WRITER_SERVICE_URL",
+                                  "value": "[parameters('writerServiceUrl')]"
+                                },
+                                {
+                                  "name": "REVIEWER_SERVICE_URL",
+                                  "value": "[parameters('reviewerServiceUrl')]"
+                                },
+                                {
+                                  "name": "SUPERVISOR_SERVICE_URL",
+                                  "value": "[parameters('supervisorServiceUrl')]"
+                                },
+                                {
+                                  "name": "AZURE_COSMOSDB_ENDPOINT",
+                                  "value": "[parameters('cosmosEndpoint')]"
+                                },
+                                {
+                                  "name": "AZURE_COSMOSDB_KEY",
+                                  "secretRef": "cosmos-primary-key"
+                                },
+                                {
+                                  "name": "AZURE_COSMOSDB_DATABASE_NAME",
+                                  "value": "[parameters('cosmosDatabaseName')]"
+                                },
+                                {
+                                  "name": "AZURE_COSMOSDB_CONTAINER_NAME",
+                                  "value": "[parameters('cosmosContainerName')]"
+                                },
+                                {
+                                  "name": "ENVIRONMENT",
+                                  "value": "production"
+                                }
+                              ],
+                              "resources": {
+                                "cpu": "[json('0.5')]",
+                                "memory": "1Gi"
+                              },
+                              "probes": [
+                                {
+                                  "type": "Liveness",
+                                  "httpGet": {
+                                    "path": "/health",
+                                    "port": 8000
+                                  },
+                                  "initialDelaySeconds": 30,
+                                  "periodSeconds": 30
+                                },
+                                {
+                                  "type": "Readiness",
+                                  "httpGet": {
+                                    "path": "/health",
+                                    "port": 8000
+                                  },
+                                  "initialDelaySeconds": 10,
+                                  "periodSeconds": 10
+                                }
+                              ]
+                            }
+                          ],
+                          "scale": {
+                            "minReplicas": 1,
+                            "maxReplicas": 10,
+                            "rules": [
+                              {
+                                "name": "http-scaling",
+                                "http": {
+                                  "metadata": {
+                                    "concurrentRequests": "20"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "Microsoft.Authorization/roleAssignments",
+                      "apiVersion": "2022-04-01",
+                      "scope": "[format('Microsoft.ContainerRegistry/registries/{0}', parameters('containerRegistryName'))]",
+                      "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('containerRegistryName')), resourceId('Microsoft.App/containerApps', parameters('name')), variables('acrPullRoleDefinitionId'))]",
+                      "properties": {
+                        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('acrPullRoleDefinitionId'))]",
+                        "principalId": "[reference(resourceId('Microsoft.App/containerApps', parameters('name')), '2024-03-01', 'full').identity.principalId]",
+                        "principalType": "ServicePrincipal"
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.App/containerApps', parameters('name'))]"
+                      ]
+                    }
+                  ],
+                  "outputs": {
+                    "uri": {
+                      "type": "string",
+                      "value": "[format('https://{0}', reference(resourceId('Microsoft.App/containerApps', parameters('name')), '2024-03-01').configuration.ingress.fqdn)]"
+                    },
+                    "name": {
+                      "type": "string",
+                      "value": "[parameters('name')]"
+                    },
+                    "id": {
+                      "type": "string",
+                      "value": "[resourceId('Microsoft.App/containerApps', parameters('name'))]"
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/components', format('appi-{0}', parameters('environmentName')))]",
+                "[resourceId('Microsoft.App/managedEnvironments', format('cae-{0}', parameters('environmentName')))]",
+                "[resourceId('Microsoft.ContainerRegistry/registries', format('cr{0}{1}', replace(parameters('environmentName'), '-', ''), uniqueString(resourceGroup().id)))]",
+                "[resourceId('Microsoft.DocumentDB/databaseAccounts', format('cosmos-{0}{1}', parameters('environmentName'), uniqueString(resourceGroup().id)))]",
+                "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers', format('cosmos-{0}{1}', parameters('environmentName'), uniqueString(resourceGroup().id)), 'content-generation-db', 'chat-history')]",
+                "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlDatabases', format('cosmos-{0}{1}', parameters('environmentName'), uniqueString(resourceGroup().id)), 'content-generation-db')]",
+                "[resourceId('Microsoft.Resources/deployments', 'planner-agent')]",
+                "[resourceId('Microsoft.Resources/deployments', 'researcher-agent')]",
+                "[resourceId('Microsoft.Resources/deployments', 'reviewer-agent')]",
+                "[resourceId('Microsoft.Search/searchServices', format('srch-{0}', parameters('environmentName')))]",
+                "[resourceId('Microsoft.Storage/storageAccounts', format('st{0}{1}', take(replace(parameters('environmentName'), '-', ''), 9), uniqueString(resourceGroup().id)))]",
+                "[resourceId('Microsoft.Resources/deployments', 'supervisor-agent')]",
+                "[resourceId('Microsoft.Resources/deployments', 'writer-agent')]"
+              ]
+            }
+          ],
+          "outputs": {
+            "storageAccountName": {
+              "type": "string",
+              "value": "[format('st{0}{1}', take(replace(parameters('environmentName'), '-', ''), 9), uniqueString(resourceGroup().id))]"
+            },
+            "storageAccountId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Storage/storageAccounts', format('st{0}{1}', take(replace(parameters('environmentName'), '-', ''), 9), uniqueString(resourceGroup().id)))]"
+            },
+            "applicationInsightsConnectionString": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Insights/components', format('appi-{0}', parameters('environmentName'))), '2020-02-02').ConnectionString]"
+            },
+            "applicationInsightsName": {
+              "type": "string",
+              "value": "[format('appi-{0}', parameters('environmentName'))]"
+            },
+            "searchServiceEndpoint": {
+              "type": "string",
+              "value": "[format('https://{0}.search.windows.net', format('srch-{0}', parameters('environmentName')))]"
+            },
+            "searchServiceName": {
+              "type": "string",
+              "value": "[format('srch-{0}', parameters('environmentName'))]"
+            },
+            "searchServiceKey": {
+              "type": "string",
+              "value": "[listAdminKeys(resourceId('Microsoft.Search/searchServices', format('srch-{0}', parameters('environmentName'))), '2023-11-01').primaryKey]"
+            },
+            "aiFoundryName": {
+              "type": "string",
+              "value": "[format('aip-{0}', parameters('environmentName'))]"
+            },
+            "aiFoundryEndpoint": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.MachineLearningServices/workspaces', format('aip-{0}', parameters('environmentName'))), '2024-04-01').discoveryUrl]"
+            },
+            "containerAppsEnvironmentName": {
+              "type": "string",
+              "value": "[format('cae-{0}', parameters('environmentName'))]"
+            },
+            "containerRegistryName": {
+              "type": "string",
+              "value": "[format('cr{0}{1}', replace(parameters('environmentName'), '-', ''), uniqueString(resourceGroup().id))]"
+            },
+            "containerRegistryEndpoint": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.ContainerRegistry/registries', format('cr{0}{1}', replace(parameters('environmentName'), '-', ''), uniqueString(resourceGroup().id))), '2023-07-01').loginServer]"
+            },
+            "logAnalyticsWorkspaceName": {
+              "type": "string",
+              "value": "[format('log-{0}', parameters('environmentName'))]"
+            },
+            "keyVaultName": {
+              "type": "string",
+              "value": "[format('kv-{0}{1}', replace(parameters('environmentName'), '-', ''), uniqueString(resourceGroup().id))]"
+            },
+            "aiHubName": {
+              "type": "string",
+              "value": "[format('aih-{0}', parameters('environmentName'))]"
+            },
+            "openAIEndpoint": {
+              "type": "string",
+              "value": "[parameters('existingOpenAIEndpoint')]"
+            },
+            "openAIDeploymentName": {
+              "type": "string",
+              "value": "[parameters('existingOpenAIDeploymentName')]"
+            },
+            "openAIEmbeddingsDeploymentName": {
+              "type": "string",
+              "value": "text-embedding-3-small"
+            },
+            "cosmosEndpoint": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.DocumentDB/databaseAccounts', format('cosmos-{0}{1}', parameters('environmentName'), uniqueString(resourceGroup().id))), '2023-11-15').documentEndpoint]"
+            },
+            "cosmosAccountName": {
+              "type": "string",
+              "value": "[format('cosmos-{0}{1}', parameters('environmentName'), uniqueString(resourceGroup().id))]"
+            },
+            "cosmosPrimaryKey": {
+              "type": "string",
+              "value": "[listKeys(resourceId('Microsoft.DocumentDB/databaseAccounts', format('cosmos-{0}{1}', parameters('environmentName'), uniqueString(resourceGroup().id))), '2023-11-15').primaryMasterKey]"
+            },
+            "cosmosDatabaseName": {
+              "type": "string",
+              "value": "content-generation-db"
+            },
+            "cosmosContainerName": {
+              "type": "string",
+              "value": "chat-history"
+            },
+            "plannerAgentUri": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Resources/deployments', 'planner-agent'), '2022-09-01').outputs.uri.value]"
+            },
+            "plannerAgentName": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Resources/deployments', 'planner-agent'), '2022-09-01').outputs.name.value]"
+            },
+            "plannerAgentFqdn": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Resources/deployments', 'planner-agent'), '2022-09-01').outputs.fqdn.value]"
+            },
+            "researcherAgentUri": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Resources/deployments', 'researcher-agent'), '2022-09-01').outputs.uri.value]"
+            },
+            "researcherAgentName": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Resources/deployments', 'researcher-agent'), '2022-09-01').outputs.name.value]"
+            },
+            "researcherAgentFqdn": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Resources/deployments', 'researcher-agent'), '2022-09-01').outputs.fqdn.value]"
+            },
+            "writerAgentUri": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Resources/deployments', 'writer-agent'), '2022-09-01').outputs.uri.value]"
+            },
+            "writerAgentName": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Resources/deployments', 'writer-agent'), '2022-09-01').outputs.name.value]"
+            },
+            "writerAgentFqdn": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Resources/deployments', 'writer-agent'), '2022-09-01').outputs.fqdn.value]"
+            },
+            "reviewerAgentUri": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Resources/deployments', 'reviewer-agent'), '2022-09-01').outputs.uri.value]"
+            },
+            "reviewerAgentName": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Resources/deployments', 'reviewer-agent'), '2022-09-01').outputs.name.value]"
+            },
+            "reviewerAgentFqdn": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Resources/deployments', 'reviewer-agent'), '2022-09-01').outputs.fqdn.value]"
+            },
+            "supervisorAgentUri": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Resources/deployments', 'supervisor-agent'), '2022-09-01').outputs.uri.value]"
+            },
+            "supervisorAgentName": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Resources/deployments', 'supervisor-agent'), '2022-09-01').outputs.name.value]"
+            },
+            "supervisorAgentFqdn": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Resources/deployments', 'supervisor-agent'), '2022-09-01').outputs.fqdn.value]"
+            },
+            "orchestratorApiUri": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Resources/deployments', 'orchestrator-api'), '2022-09-01').outputs.uri.value]"
+            },
+            "orchestratorApiName": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Resources/deployments', 'orchestrator-api'), '2022-09-01').outputs.name.value]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('rg-{0}', parameters('environmentName')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "AZURE_LOCATION": {
+      "type": "string",
+      "value": "[parameters('location')]"
+    },
+    "AZURE_TENANT_ID": {
+      "type": "string",
+      "value": "[tenant().tenantId]"
+    },
+    "AZURE_RESOURCE_GROUP": {
+      "type": "string",
+      "value": "[format('rg-{0}', parameters('environmentName'))]"
+    },
+    "AZURE_STORAGE_ACCOUNT_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.storageAccountName.value]"
+    },
+    "AZURE_STORAGE_ACCOUNT_ID": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.storageAccountId.value]"
+    },
+    "APPLICATIONINSIGHTS_CONNECTION_STRING": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.applicationInsightsConnectionString.value]"
+    },
+    "APPLICATIONINSIGHTS_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.applicationInsightsName.value]"
+    },
+    "AZURE_SEARCH_ENDPOINT": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.searchServiceEndpoint.value]"
+    },
+    "AZURE_SEARCH_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.searchServiceName.value]"
+    },
+    "AZURE_SEARCH_ADMIN_KEY": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.searchServiceKey.value]"
+    },
+    "AZURE_SEARCH_INDEX_NAME": {
+      "type": "string",
+      "value": "documents-index"
+    },
+    "AZURE_OPENAI_ENDPOINT": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.openAIEndpoint.value]"
+    },
+    "AZURE_OPENAI_DEPLOYMENT_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.openAIDeploymentName.value]"
+    },
+    "AZURE_OPENAI_API_VERSION": {
+      "type": "string",
+      "value": "2024-12-01-preview"
+    },
+    "AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.openAIEmbeddingsDeploymentName.value]"
+    },
+    "AZURE_OPENAI_EMBEDDINGS_ENDPOINT": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.openAIEndpoint.value]"
+    },
+    "AZURE_OPENAI_EMBEDDINGS_API_VERSION": {
+      "type": "string",
+      "value": "2023-05-15"
+    },
+    "AZURE_DEPLOYMENT_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.openAIDeploymentName.value]"
+    },
+    "AZURE_MODEL_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.openAIDeploymentName.value]"
+    },
+    "COSMOS_ENDPOINT": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.cosmosEndpoint.value]"
+    },
+    "COSMOS_ACCOUNT_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.cosmosAccountName.value]"
+    },
+    "COSMOS_PRIMARY_KEY": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.cosmosPrimaryKey.value]"
+    },
+    "COSMOS_DATABASE_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.cosmosDatabaseName.value]"
+    },
+    "COSMOS_CHECKPOINTS_CONTAINER": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.cosmosContainerName.value]"
+    },
+    "AZURE_AI_FOUNDRY_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.aiFoundryName.value]"
+    },
+    "AZURE_AI_FOUNDRY_ENDPOINT": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.aiFoundryEndpoint.value]"
+    },
+    "AZURE_CONTAINER_APPS_ENVIRONMENT_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.containerAppsEnvironmentName.value]"
+    },
+    "AZURE_CONTAINER_REGISTRY_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.containerRegistryName.value]"
+    },
+    "AZURE_CONTAINER_REGISTRY_ENDPOINT": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.containerRegistryEndpoint.value]"
+    },
+    "API_URI": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.orchestratorApiUri.value]"
+    },
+    "API_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.orchestratorApiName.value]"
+    },
+    "PLANNER_AGENT_URI": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.plannerAgentUri.value]"
+    },
+    "PLANNER_AGENT_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.plannerAgentName.value]"
+    },
+    "RESEARCHER_AGENT_URI": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.researcherAgentUri.value]"
+    },
+    "RESEARCHER_AGENT_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.researcherAgentName.value]"
+    },
+    "WRITER_AGENT_URI": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.writerAgentUri.value]"
+    },
+    "WRITER_AGENT_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.writerAgentName.value]"
+    },
+    "REVIEWER_AGENT_URI": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.reviewerAgentUri.value]"
+    },
+    "REVIEWER_AGENT_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.reviewerAgentName.value]"
+    },
+    "SUPERVISOR_AGENT_URI": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.supervisorAgentUri.value]"
+    },
+    "SUPERVISOR_AGENT_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.supervisorAgentName.value]"
+    },
+    "AZURE_KEY_VAULT_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.keyVaultName.value]"
+    },
+    "AZURE_LOG_ANALYTICS_WORKSPACE_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.logAnalyticsWorkspaceName.value]"
+    },
+    "AZURE_AI_HUB_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'resources'), '2022-09-01').outputs.aiHubName.value]"
+    }
+  }
+}

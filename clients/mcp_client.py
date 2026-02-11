@@ -2,7 +2,10 @@ import asyncio
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
-SERVER_URL = "http://localhost:8000/mcp"  # Your FastMCP server root (or /mcp if custom path)
+# Your FastMCP server root (or /mcp if custom path)
+# for Local testing, use localhost. In production, use the internal service name (e.g., http://planner-agent:8003)
+# for Azure Container Apps, use public URL from log of deploy-apps.ps1 script or Azure Portal (e.g., https://planner-agent-abc123.azurecontainerapps.io/mcp)
+SERVER_URL = "https://ca-orchestrator-maala-acc.bravebay-65e1f8d4.westus2.azurecontainerapps.io/mcp"  
 
 async def main():
     # Create the Streamable HTTP transport context manager

@@ -45,7 +45,7 @@ class A2AClient:
         """
         self.timeout = timeout
         self._agent_cards: Dict[str, AgentCard] = {}
-        self._client = httpx.AsyncClient(timeout=timeout)
+        self._client = httpx.AsyncClient(timeout=timeout, follow_redirects=True)
     
     async def discover_agent(self, agent_base_url: str) -> AgentCard:
         """

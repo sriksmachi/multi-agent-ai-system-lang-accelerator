@@ -54,6 +54,12 @@ app = FastAPI(
 FastAPIInstrumentor.instrument_app(app)
 
 
+@app.get("/")
+async def root():
+    """Root endpoint - health check for container probes"""
+    return {"agent": "planner", "status": "healthy", "version": "1.0.0"}
+
+
 @app.get("/health", response_model=AgentHealthResponse)
 async def health_check():
     """Health check endpoint"""

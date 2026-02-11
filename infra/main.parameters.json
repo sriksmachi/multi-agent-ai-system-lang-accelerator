@@ -10,6 +10,18 @@
     },
     "principalId": {
       "value": "${AZURE_PRINCIPAL_ID}"
+    },
+    "existingOpenAIEndpoint": {
+      "value": "https://vism-mjcnt3i9-eastus2.openai.azure.com/"
+    },
+    "existingOpenAIKey": {
+      "value": "${AZURE_OPENAI_API_KEY}"
+    },
+    "existingOpenAIDeploymentName": {
+      "value": "gpt-5.2-chat"
+    },
+    "useExistingOpenAI": {
+      "value": true
     }
   }
 }

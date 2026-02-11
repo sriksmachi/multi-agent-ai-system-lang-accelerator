@@ -293,7 +293,7 @@ The Inspector runs directly through `npx` without requiring installation:
 npx @modelcontextprotocol/inspector
 ```
 
-#### Connecting to the Orchestrator
+#### Connecting to the Orchestrator for local development
 
 1. **Start the services** (if not already running):
    ```powershell
@@ -599,30 +599,6 @@ Returns information about all agents discovered via A2A:
 5. **Idempotency** - State persistence enables workflow recovery
 6. **Dynamic Discovery** - Agents are discovered at runtime via A2A protocol
 
-### Workflow Integration with A2A
-
-The `AgentOrchestrator` class in the workflow integrates A2A discovery with LangGraph orchestration:
-
-```python
-from workflows import AgentOrchestrator
-
-# Initialize with A2A discovery enabled (default)
-orchestrator = AgentOrchestrator(use_a2a_discovery=True)
-
-# Discover all agents on startup
-await orchestrator.discover_all_agents()
-
-# Call agents - endpoints are resolved dynamically from Agent Cards
-result = await orchestrator.call_planner(state)
-
-# Get discovered agent information
-agents = orchestrator.get_discovered_agents()
-for name, card in agents.items():
-    print(f"{card.name}: {[s.get('name') for s in card.skills]}")
-
-await orchestrator.close()
-```
-
 #### How Discovery Works in the Workflow
 
 1. **First call to any agent** triggers automatic discovery via `/.well-known/agent.json`
@@ -771,47 +747,46 @@ docker-compose down
 #### Step 1: Login and Initialize
 
 ```powershell
-# Login to Azure
 az login
 azd auth login
-
-# Initialize Azure Developer CLI
 azd init
 ```
 
 #### Step 2: Provision Infrastructure
 
 ```powershell
-# Creates all Azure resources
 azd provision
 ```
 
-This creates:
-- ✅ Container Apps Environment
-- ✅ Container Registry
-- ✅ 5 Container Apps (4 agents + orchestrator)
-- ✅ Azure OpenAI, AI Search, Cosmos DB
-- ✅ Application Insights & Log Analytics
+Creates: Container Apps Environment, Container Registry, Container Apps (6), Azure OpenAI, AI Search, Cosmos DB, Application Insights.
 
-#### Step 3: Build and Deploy
+#### Step 3: Configure RBAC
 
 ```powershell
-# Automated deployment script
-.\infra\deploy-all.ps1
+.\configure-rbac.ps1
 ```
 
-Or manually:
+Creates a user-assigned managed identity and grants access to:
+- **AcrPull** on Container Registry
+- **Key Vault Secrets User** on Key Vault
+- **Cognitive Services OpenAI User** on Azure OpenAI
+- **Cosmos DB Data Contributor** on Cosmos DB
+- **Search Index Data Contributor** on AI Search
+
+#### Step 4: Build and Deploy Apps
 
 ```powershell
-# Get registry name
-$REGISTRY = az acr list --resource-group <rg> --query "[0].name" -o tsv
+# Deploy latest images (default)
+.\deploy-apps.ps1
 
-# Build each image
-az acr build --registry $REGISTRY --image planner-agent:latest -f agents/planner_agent/Dockerfile .
-az acr build --registry $REGISTRY --image researcher-agent:latest -f agents/researcher_agent/Dockerfile .
-az acr build --registry $REGISTRY --image writer-agent:latest -f agents/writer_agent/Dockerfile .
-az acr build --registry $REGISTRY --image reviewer-agent:latest -f agents/reviewer_agent/Dockerfile .
-az acr build --registry $REGISTRY --image orchestrator-api:latest -f Dockerfile .
+# Or build images first, then deploy
+.\deploy-apps.ps1 -Build
+```
+
+#### Step 5: Verify Deployment
+
+```powershell
+.\verify-deployment.ps1
 ```
 
 | Aspect | Azure Container Apps |

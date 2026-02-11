@@ -527,6 +527,8 @@ def build_post_generator_workflow() -> StateGraph:
     workflow.add_node("router", router_node)
     
     # Define edges (linear flow with conditional loop)
+    # For LLM driven decision making, remove the below and let the router_node return the next node name based on its logic.
+    # workflow.add_edge("router", "writer", condition=should_refine)  #
     workflow.add_edge("planner", "researcher")
     workflow.add_edge("researcher", "writer")
     workflow.add_edge("writer", "reviewer")

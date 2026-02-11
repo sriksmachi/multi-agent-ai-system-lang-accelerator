@@ -211,3 +211,6 @@ __marimo__/
 *.pdf
 .deepeval/
 .vscode/
+infra/output/
+.azure
+*vscode

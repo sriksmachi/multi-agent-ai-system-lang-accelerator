@@ -1,111 +1,112 @@
-# Deploy All Agent Services to Azure Container Apps
-# This script builds and deploys all agent containers and the orchestrator
+# Azure Infrastructure Deployment Script
+# Deploys all Azure resources for multi-agent AI system using Bicep templates
+# Run this FIRST before deploy-apps.ps1
 
 param(
-    [string]$ResourceGroup = "",
-    [string]$EnvironmentName = ""
+    [string]$EnvironmentName = "maala-acc",
+    [string]$Location = "westus2",
+    [string]$SubscriptionId = "090fcc3a-ed78-4e98-a932-974261d033e2"
 )
 
-# Ensure we're logged in
-Write-Host "🔐 Checking Azure login..." -ForegroundColor Cyan
-$account = az account show 2>$null
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "❌ Not logged in to Azure. Running 'az login'..." -ForegroundColor Red
-    az login
+# Set error action preference
+$ErrorActionPreference = "Stop"
+
+# Log function
+function Write-Log {
+    param([string]$Message, [string]$Level = "INFO")
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Write-Host "[$timestamp] [$Level] $Message"
 }
 
-# Get environment variables from azd if not provided
-if ([string]::IsNullOrEmpty($ResourceGroup)) {
-    Write-Host "📋 Getting resource group from azd environment..." -ForegroundColor Cyan
-    $ResourceGroup = azd env get-values | Select-String "AZURE_RESOURCE_GROUP" | ForEach-Object { ($_ -split '=')[1].Trim('"') }
+Write-Log "Azure Infrastructure Deployment Starting"
+Write-Log "Environment: $EnvironmentName"
+Write-Log "Location: $Location"
+Write-Log "Subscription: $SubscriptionId"
+
+# Set subscription
+az account set --subscription $SubscriptionId
+Write-Log "Subscription set to: $SubscriptionId"
+
+# Get principal ID
+$principalId = az ad signed-in-user show --query id -o tsv
+Write-Log "Principal ID: $principalId"
+
+# Create resource group
+$resourceGroupName = "rg-$EnvironmentName"
+Write-Log "Creating/checking resource group: $resourceGroupName"
+
+$rgExists = az group exists --name $resourceGroupName
+if ($rgExists -eq "true") {
+    Write-Log "Resource group already exists"
+} else {
+    az group create --name $resourceGroupName --location $Location
+    Write-Log "Resource group created"
 }
 
-if ([string]::IsNullOrEmpty($EnvironmentName)) {
-    Write-Host "📋 Getting environment name from azd environment..." -ForegroundColor Cyan
-    $EnvironmentName = azd env get-values | Select-String "AZURE_ENV_NAME" | ForEach-Object { ($_ -split '=')[1].Trim('"') }
-}
+# Set environment variables for deployment
+$env:AZURE_ENV_NAME = $EnvironmentName
+$env:AZURE_LOCATION = $Location
+$env:AZURE_PRINCIPAL_ID = $principalId
+$env:AZURE_OPENAI_API_KEY = ""
 
-# Get container registry name
-Write-Host "📋 Getting container registry info..." -ForegroundColor Cyan
-$registryName = az acr list --resource-group $ResourceGroup --query "[0].name" -o tsv
-$registryServer = "$registryName.azurecr.io"
+# Get absolute paths
+$infraPath = $PSScriptRoot
+$templatePath = Join-Path $infraPath "resources.bicep"
+$parametersPath = Join-Path $infraPath "main.parameters.json"
 
-Write-Host ""
-Write-Host "🚀 Deployment Configuration:" -ForegroundColor Green
-Write-Host "   Resource Group: $ResourceGroup"
-Write-Host "   Environment: $EnvironmentName"
-Write-Host "   Registry: $registryServer"
-Write-Host ""
+Write-Log "Template path: $templatePath"
+Write-Log "Parameters path: $parametersPath"
 
-# Build and push images
-Write-Host "🔨 Building and pushing container images..." -ForegroundColor Yellow
+# Replace environment variables in parameters
+Write-Log "Preparing deployment parameters..."
+$paramsContent = Get-Content $parametersPath -Raw
+$paramsContent = $paramsContent -replace '\$\{AZURE_ENV_NAME\}', $EnvironmentName
+$paramsContent = $paramsContent -replace '\$\{AZURE_LOCATION\}', $Location
+$paramsContent = $paramsContent -replace '\$\{AZURE_PRINCIPAL_ID\}', $principalId
+$paramsContent = $paramsContent -replace '\$\{AZURE_OPENAI_API_KEY\}', $env:AZURE_OPENAI_API_KEY
+$tmpParamsFile = Join-Path $infraPath "main.parameters.temp.json"
+Set-Content -Path $tmpParamsFile -Value $paramsContent
 
-$images = @(
-    @{Name="planner-agent"; Dockerfile="agents/planner_agent/Dockerfile"},
-    @{Name="researcher-agent"; Dockerfile="agents/researcher_agent/Dockerfile"},
-    @{Name="writer-agent"; Dockerfile="agents/writer_agent/Dockerfile"},
-    @{Name="reviewer-agent"; Dockerfile="agents/reviewer_agent/Dockerfile"},
-    @{Name="supervisor-agent"; Dockerfile="agents/supervisor/Dockerfile"},
-    @{Name="orchestrator-api"; Dockerfile="Dockerfile"}
-)
+Write-Log "Deploying Azure resources..."
+Write-Log "This may take 15-20 minutes..."
 
-foreach ($image in $images) {
-    Write-Host ""
-    Write-Host "📦 Building $($image.Name)..." -ForegroundColor Cyan
-    $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    az acr build --registry $registryName --image "$($image.Name):latest" --image "$($image.Name):$timestamp" --file $image.Dockerfile .
+$deploymentName = "deploy-$(Get-Date -Format 'yyyyMMddHHmmss')"
+
+try {
+    $output = az deployment group create `
+        --name $deploymentName `
+        --resource-group $resourceGroupName `
+        --template-file $templatePath `
+        --parameters $tmpParamsFile `
+        --output json
     
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "❌ Failed to build $($image.Name)" -ForegroundColor Red
-        exit 1
+    $outputJson = $output | ConvertFrom-Json
+    
+    Write-Log "Deployment completed successfully"
+    Write-Log "Deployment name: $deploymentName"
+    
+    # Extract outputs
+    $outputs = $outputJson.properties.outputs
+    
+    Write-Log "Container Registry Name: $($outputs.containerRegistryName.value)"
+    Write-Log "Container Apps Environment: $($outputs.containerAppsEnvironmentName.value)"
+    Write-Log "Container Registry Endpoint: $($outputs.containerRegistryEndpoint.value)"
+    
+    # Save outputs to file (in project root)
+    $outputFile = Join-Path (Split-Path $infraPath -Parent) "deployment-outputs.json"
+    $outputJson.properties.outputs | ConvertTo-Json | Set-Content -Path $outputFile
+    Write-Log "Outputs saved to: $outputFile"
+    
+} catch {
+    Write-Log "Deployment failed: $_" "ERROR"
+    exit 1
+} finally {
+    # Clean up temp parameters file
+    if (Test-Path $tmpParamsFile) {
+        Remove-Item $tmpParamsFile
     }
-    Write-Host "✅ Built $($image.Name)" -ForegroundColor Green
 }
 
-# Update container apps
-Write-Host ""
-Write-Host "🔄 Updating Container Apps..." -ForegroundColor Yellow
-
-$apps = @(
-    @{Name="ca-planner-$EnvironmentName"; Image="planner-agent"},
-    @{Name="ca-researcher-$EnvironmentName"; Image="researcher-agent"},
-    @{Name="ca-writer-$EnvironmentName"; Image="writer-agent"},
-    @{Name="ca-reviewer-$EnvironmentName"; Image="reviewer-agent"},
-    @{Name="ca-supervisor-$EnvironmentName"; Image="supervisor-agent"},
-    @{Name="ca-orchestrator-$EnvironmentName"; Image="orchestrator-api"}
-)
-
-foreach ($app in $apps) {
-    Write-Host ""
-    Write-Host "🔄 Updating $($app.Name)..." -ForegroundColor Cyan
-    
-    az containerapp update --name $app.Name --resource-group $ResourceGroup --image "$registryServer/$($app.Image):latest"
-    
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "⚠️  Warning: Failed to update $($app.Name)" -ForegroundColor Yellow
-    } else {
-        Write-Host "✅ Updated $($app.Name)" -ForegroundColor Green
-    }
-}
-
-# Get orchestrator URL
-Write-Host ""
-Write-Host "🌐 Getting service URLs..." -ForegroundColor Cyan
-$orchestratorUrl = az containerapp show --name "ca-orchestrator-$EnvironmentName" --resource-group $ResourceGroup --query "properties.configuration.ingress.fqdn" -o tsv
-
-$supervisorUrl = az containerapp show --name "ca-supervisor-$EnvironmentName" --resource-group $ResourceGroup --query "properties.configuration.ingress.fqdn" -o tsv
-
-Write-Host ""
-Write-Host "✅ Deployment Complete!" -ForegroundColor Green
-Write-Host ""
-Write-Host "📍 Orchestrator API: https://$orchestratorUrl" -ForegroundColor Cyan
-Write-Host "📍 Supervisor Agent: https://$supervisorUrl" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "🧪 Test the deployment:" -ForegroundColor Yellow
-Write-Host "   curl https://$orchestratorUrl/health"
-Write-Host "   curl https://$supervisorUrl/health"
-Write-Host "   curl https://$supervisorUrl/agents"
-Write-Host ""
-Write-Host "📊 Monitor in Application Insights:" -ForegroundColor Yellow
-Write-Host "   az portal show --resource-group $ResourceGroup --resource-type Microsoft.Insights/components"
-Write-Host ""
+Write-Log "Infrastructure deployment completed"
+Write-Log ""
+Write-Log "Next step: Run deploy-apps.ps1 from the project root to deploy application containers"

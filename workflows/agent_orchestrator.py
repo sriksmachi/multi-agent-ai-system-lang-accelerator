@@ -45,10 +45,11 @@ class AgentOrchestrator:
         self.writer_url = get_agent_url("writer") or os.getenv("WRITER_SERVICE_URL", "http://localhost:8003")
         self.reviewer_url = get_agent_url("reviewer") or os.getenv("REVIEWER_SERVICE_URL", "http://localhost:8004")
         
-        # Create async HTTP client with timeout
+        # Create async HTTP client with timeout and redirect handling
         self.client = httpx.AsyncClient(
             timeout=httpx.Timeout(240.0, connect=10.0),
-            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
+            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+            follow_redirects=True  # Handle HTTP -> HTTPS redirects in Azure Container Apps
         )
         
         # A2A client for agent discovery

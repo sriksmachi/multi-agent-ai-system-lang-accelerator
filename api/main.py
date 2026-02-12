@@ -53,7 +53,7 @@ from api.schemas import (
     HealthResponse,
     ErrorResponse,
 )
-from workflows import configure_post_generator, AgentOrchestrator
+from workflows import configure_post_generator, AgentOrchestrator, set_notification_callback
 
 
 # Configure logging to console FIRST - force configuration
@@ -143,6 +143,15 @@ async def generate_linkedin_post_stream(
         try:
             await ctx.info(f"Starting generation for: {topic}")
             await ctx.report_progress(0.1, message="Initializing workflow...")
+            
+            # Create notification callback for streaming router thinking
+            async def router_notification_callback(thinking: str, decision: str):
+                """Stream router thinking process to client."""
+                await ctx.info(f"[THINKING]{thinking}[/THINKING]")
+                await ctx.info(f"[ROUTER_DECISION]{decision}[/ROUTER_DECISION]")
+            
+            # Set the notification callback for the workflow
+            set_notification_callback(router_notification_callback)
 
             compiled_workflow, initial_state, config = configure_post_generator(
                 user_id=user_id,
@@ -159,13 +168,30 @@ async def generate_linkedin_post_stream(
                 "draft": "",
                 "final_post": "",
                 "scores": {},
-                "feedback": ""
+                "feedback": "",
+                "router_thinking": "",
+                "router_decisions": []
             }
 
             async for chunk in compiled_workflow.astream(initial_state.model_dump(), config=config, stream_mode="updates"):
                 if isinstance(chunk, dict):
                     for node_name, node_output in chunk.items():
                         if isinstance(node_output, dict):
+                            # Stream router thinking from intelligent router
+                            if router_thinking := node_output.get("router_thinking"):
+                                result_data["router_thinking"] = router_thinking
+                                # Send detailed thinking to client
+                                await ctx.info(f"[THINKING]{router_thinking}[/THINKING]")
+                                await ctx.report_progress(0.15, message="Router analyzing state...")
+                            
+                            # Stream router decision
+                            if router_decision := node_output.get("router_decision"):
+                                result_data["router_decisions"].append({
+                                    "decision": router_decision,
+                                    "thinking": node_output.get("router_thinking", "")[:200]
+                                })
+                                await ctx.info(f"[ROUTER_DECISION]{router_decision}[/ROUTER_DECISION]")
+                            
                             # Stream plan from planner
                             if plan := node_output.get("plan"):
                                 result_data["plan"] = plan
@@ -214,7 +240,8 @@ async def generate_linkedin_post_stream(
             logger.error(f"Streaming error: {e}", exc_info=True)
             raise
         
-@mcp.tool()
+# @mcp.tool()
+# Enable this as a tool if you want to benchmark synchronous vs streaming performance in the Supervisor Agent
 async def generate_linkedin_post_sync(
     topic: str,
     user_id: Optional[str] = None,

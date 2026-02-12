@@ -154,7 +154,12 @@ class ResearcherAgent:
         # Use topic as primary search query
         logger.info(f"🔍 Searching Azure AI Search for: {topic}")
         retrieved_docs = self.search_context(topic, top_k=5)
-        context_text = self.format_context(retrieved_docs)
+        
+        if not retrieved_docs:
+            logger.info("No relevant documents found for the topic.")
+            context_text = "No relevant context found for the topic."
+        else:
+            context_text = self.format_context(retrieved_docs)
         
         logger.info(f"✅ Retrieved {len(retrieved_docs)} documents")
         

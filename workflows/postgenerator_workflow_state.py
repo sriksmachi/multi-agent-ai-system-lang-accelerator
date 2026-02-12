@@ -40,6 +40,13 @@ class PostGeneratorState(BaseModel):
     refinement_count: int = Field(default=0, description="Number of refinement iterations")
     max_refinements: int = Field(default=3, description="Maximum allowed refinements")
     
+    # Router reasoning (intelligent routing with thinking process)
+    router_thinking: str = Field(default="", description="Router's reasoning/thinking process for decision making")
+    router_decision: str = Field(default="", description="Final routing decision (next node name)")
+    current_node: str = Field(default="", description="Current node being executed")
+    next_node: str = Field(default="", description="Next node to execute based on router reasoning")
+    workflow_status: str = Field(default="initializing", description="Current workflow status")
+    
     # Output
     final_post: str = Field(default="", description="Final approved post")
     thread_id: Optional[str] = Field(default=None, description="Thread identifier for tracing")

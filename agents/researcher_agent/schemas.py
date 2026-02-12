@@ -18,7 +18,8 @@ class ResearchRequest(BaseModel):
 
 class ResearchResponse(BaseModel):
     """Response schema for research"""
-    documents: List[str] = Field(..., description="Retrieved documents")
+    documents: List[str] = Field(..., description="Retrieved documents as formatted strings")
+    retrieved_docs: List[dict] = Field(default_factory=list, description="Raw retrieved document metadata")
     document_count: int = Field(..., description="Number of documents retrieved")
     agent: str = Field(default="researcher", description="Agent identifier")
     thread_id: str = Field(..., description="Thread/conversation ID")

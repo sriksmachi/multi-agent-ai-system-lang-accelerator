@@ -21,7 +21,8 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 # Configuration
-ORCHESTRATOR_URL = "https://ca-orchestrator-maala-acc.bravebay-65e1f8d4.westus2.azurecontainerapps.io"
+# ORCHESTRATOR_URL = "https://ca-orchestrator-maala-acc.bravebay-65e1f8d4.westus2.azurecontainerapps.io"
+ORCHESTRATOR_URL = "http://localhost:8000"
 MCP_SERVER_URL = f"{ORCHESTRATOR_URL}/mcp"
 
 # Page configuration
@@ -57,6 +58,11 @@ st.markdown("""
     .status-running { background-color: #FFF9C4; color: #F57F17; }
     .status-complete { background-color: #C8E6C9; color: #2E7D32; }
     .status-error { background-color: #FFCDD2; color: #C62828; }
+    /* Fixed height content plan expander with scrollable content */
+    [data-testid="stChatMessage"] [data-testid="stExpander"]:first-of-type [data-testid="stExpanderDetails"] > div {
+        max-height: 150px !important;
+        overflow-y: auto !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -97,8 +103,19 @@ async def call_mcp_tool(topic: str, user_id: str, progress_queue: queue.Queue, n
     Returns:
         Result dictionary with content or error
     """
+    # Track max progress to ensure it only goes forward
+    max_progress = {"value": 0.0}
+    
+    def update_progress(message: str, progress_value: float):
+        """Update progress ensuring it only increases."""
+        # Ensure progress never goes backwards
+        new_progress = max(max_progress["value"], progress_value)
+        max_progress["value"] = new_progress
+        progress_queue.put(("progress", message, new_progress))
+    
     try:
-        progress_queue.put(("progress", "Connecting to MCP server...", 0.1))
+        # Show connecting status with initial progress
+        update_progress("Connecting to MCP server...", 0.02)
         
         async def handle_progress(progress: float, total: float = None, message: str = None):
             """Handle progress notifications from MCP server."""
@@ -106,8 +123,11 @@ async def call_mcp_tool(topic: str, user_id: str, progress_queue: queue.Queue, n
                 percentage = progress / total
             else:
                 percentage = progress if progress <= 1.0 else progress / 100.0
+            
+            # Map MCP progress (0-1) to our range (0.15 - 0.90) to leave room for init/finalize
+            mapped_progress = 0.15 + (percentage * 0.75)
             msg = message if message else "Processing..."
-            progress_queue.put(("progress", msg, percentage))
+            update_progress(msg, mapped_progress)
         
         async def handle_log(notification_params):
             """Handle log/info notifications from MCP server."""
@@ -120,11 +140,12 @@ async def call_mcp_tool(topic: str, user_id: str, progress_queue: queue.Queue, n
             
         async with streamablehttp_client(MCP_SERVER_URL) as (read_stream, write_stream, get_session_id):
             async with ClientSession(read_stream, write_stream, logging_callback=handle_log) as session:
-                progress_queue.put(("progress", "Initializing session...", 0.15))
+                # Now connected - start progress tracking
+                update_progress("Connected! Initializing session...", 0.05)
                     
                 await session.initialize()
                 
-                progress_queue.put(("progress", "Starting content generation...", 0.2))
+                update_progress("Starting content generation...", 0.10)
                 
                 # Call the streaming generate tool with progress callback
                 result = await session.call_tool(
@@ -136,7 +157,7 @@ async def call_mcp_tool(topic: str, user_id: str, progress_queue: queue.Queue, n
                     progress_callback=handle_progress
                 )
                 
-                progress_queue.put(("progress", "Processing response...", 0.95))
+                update_progress("Processing response...", 0.92)
                 
                 # Extract content from result
                 if result and result.content:
@@ -172,6 +193,8 @@ def parse_notification(notification: str) -> Dict[str, Any]:
         "feedback": r'\[FEEDBACK\](.*?)\[/FEEDBACK\]',
         "final": r'\[FINAL\](.*?)\[/FINAL\]',
         "result": r'\[RESULT\](.*?)\[/RESULT\]',
+        "thinking": r'\[THINKING\](.*?)\[/THINKING\]',
+        "router_decision": r'\[ROUTER_DECISION\](.*?)\[/ROUTER_DECISION\]',
     }
     
     for tag, pattern in patterns.items():
@@ -200,7 +223,8 @@ def generate_content_with_progress(
     status_placeholder,
     plan_placeholder=None,
     draft_placeholder=None,
-    final_placeholder=None
+    final_placeholder=None,
+    thinking_placeholder=None
 ) -> Optional[Dict[str, Any]]:
     """
     Generate content with visual progress updates using MCP client.
@@ -213,6 +237,7 @@ def generate_content_with_progress(
         plan_placeholder: Optional placeholder for plan display
         draft_placeholder: Optional placeholder for draft display
         final_placeholder: Optional placeholder for final post display
+        thinking_placeholder: Optional placeholder for router thinking display
         
     Returns:
         Result dict with content and intermediate results, or None if failed
@@ -228,7 +253,9 @@ def generate_content_with_progress(
         "draft": "",
         "final_post": "",
         "scores": {},
-        "feedback": ""
+        "feedback": "",
+        "thinking": "",
+        "router_decisions": []
     }
     
     def run_async_call():
@@ -250,7 +277,8 @@ def generate_content_with_progress(
     thread.start()
     
     # Track what we've displayed
-    displayed = {"plan": False, "draft": False, "final": False}
+    displayed = {"plan": False, "draft": False, "final": False, "thinking": False}
+    thinking_steps = []  # Track all thinking steps
     
     while thread.is_alive():
         # Check for progress updates
@@ -306,6 +334,38 @@ def generate_content_with_progress(
                         if final_placeholder and not displayed["final"]:
                             final_placeholder.markdown(parsed["content"])
                             displayed["final"] = True
+                    
+                    elif parsed["type"] == "thinking":
+                        # Router's thinking process - display in thinking section
+                        thinking_content = parsed["content"]
+                        intermediate_results["thinking"] = thinking_content
+                        thinking_steps.append(thinking_content)
+                        
+                        # Update thinking display with all steps
+                        if thinking_placeholder:
+                            thinking_md = ""
+                            for i, step in enumerate(thinking_steps, 1):
+                                thinking_md += f"**Step {i}:**\n\n{step}\n\n---\n\n"
+                            thinking_placeholder.markdown(thinking_md)
+                        
+                        # Also show preview in status
+                        thinking_preview = thinking_content[:100] + "..." if len(thinking_content) > 100 else thinking_content
+                        status_placeholder.info(f"🧠 {thinking_preview}")
+                    
+                    elif parsed["type"] == "router_decision":
+                        # Router's decision - track and display
+                        decision = parsed["content"]
+                        intermediate_results["router_decisions"].append(decision)
+                        
+                        # Add decision to thinking display
+                        if thinking_placeholder and thinking_steps:
+                            thinking_md = ""
+                            for i, step in enumerate(thinking_steps, 1):
+                                thinking_md += f"**Step {i}:**\n\n{step}\n\n"
+                            thinking_md += f"\n🚦 **Decision:** `{decision}`\n\n---\n\n"
+                            thinking_placeholder.markdown(thinking_md)
+                        
+                        status_placeholder.info(f"🚦 Router → {decision}")
                     
                     elif parsed["type"] == "result":
                         if isinstance(parsed["content"], dict):
@@ -373,7 +433,7 @@ def main():
     
     # Header
     st.title("🤖 Multi-Agent Content Generator")
-    st.markdown("Generate high-quality LinkedIn posts using our multi-agent AI system.")
+    st.markdown("Generate high-quality LinkedIn posts using our multi-agent AI system that streams real-time updates of the task & LLM reasoning steps.")
     
     # Sidebar
     with st.sidebar:
@@ -424,6 +484,16 @@ def main():
                 if "metadata" in message:
                     metadata = message["metadata"]
                     with st.expander("📊 Details"):
+                        # Show thinking steps if available
+                        if metadata.get("thinking") or metadata.get("router_decisions"):
+                            st.markdown("**🧠 Router Thinking:**")
+                            if metadata.get("thinking"):
+                                st.markdown(metadata["thinking"])
+                            if metadata.get("router_decisions"):
+                                decisions_str = " → ".join(metadata["router_decisions"])
+                                st.markdown(f"**Routing Path:** `{decisions_str}`")
+                            st.markdown("---")
+                        
                         # Show plan if available
                         if metadata.get("plan"):
                             st.markdown("**🎯 Plan:**")
@@ -483,7 +553,10 @@ def main():
             progress_placeholder = st.empty()
             
             # Expandable sections for intermediate results
-            plan_expander = st.expander("🎯 **Content Plan**", expanded=True)
+            thinking_expander = st.expander("🧠 **Router Thinking Steps**", expanded=True)
+            thinking_placeholder = thinking_expander.empty()
+            
+            plan_expander = st.expander("🎯 **Content Plan**", expanded=False)
             plan_placeholder = plan_expander.empty()
             
             draft_expander = st.expander("✍️ **Draft**", expanded=False)
@@ -509,7 +582,8 @@ def main():
                 status_placeholder=status_placeholder,
                 plan_placeholder=plan_placeholder,
                 draft_placeholder=draft_placeholder,
-                final_placeholder=final_placeholder
+                final_placeholder=final_placeholder,
+                thinking_placeholder=thinking_placeholder
             )
             
             if result:
@@ -548,7 +622,9 @@ def main():
                         "plan": intermediate.get("plan", ""),
                         "draft": intermediate.get("draft", ""),
                         "scores": scores,
-                        "feedback": intermediate.get("feedback", "")
+                        "feedback": intermediate.get("feedback", ""),
+                        "thinking": intermediate.get("thinking", ""),
+                        "router_decisions": intermediate.get("router_decisions", [])
                     }
                 })
                 

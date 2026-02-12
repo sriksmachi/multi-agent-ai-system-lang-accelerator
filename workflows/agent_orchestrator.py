@@ -244,14 +244,15 @@ class AgentOrchestrator:
                 result = response.json()
                 
                 documents = result.get("documents", [])
+                retrieved_docs = result.get("retrieved_docs", [])
                 logger.info(f"✅ Researcher Agent completed: {len(documents)} documents retrieved")
                 
-                # Create context string from documents
-                context = "\n\n---\n\n".join(documents) if documents else ""
+                # Create context string from formatted documents
+                context = "\n\n---\n\n".join(documents) if documents else "No relevant documents found for the topic."
                 
                 return {
                     "context": context,
-                    "retrieved_docs": documents,
+                    "retrieved_docs": retrieved_docs,
                     "messages": state.get("messages", []) + [{
                         "role": "researcher",
                         "content": f"Retrieved {len(documents)} documents",

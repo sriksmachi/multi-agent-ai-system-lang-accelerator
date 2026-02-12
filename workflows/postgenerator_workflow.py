@@ -20,9 +20,23 @@ from opentelemetry.trace import Status, StatusCode
 
 from .postgenerator_workflow_state import PostGeneratorState
 from .agent_orchestrator import AgentOrchestrator
+from .reasoning_router import ReasoningRouter, RouterDecision
 from core.logging_config import get_logger
 from core.cosmos_checkpointer import CosmosDBCheckpointer
 import uuid
+
+
+# Global notification callback for streaming thinking updates
+_notification_callback = None
+
+def set_notification_callback(callback):
+    """Set the notification callback for streaming router thinking updates."""
+    global _notification_callback
+    _notification_callback = callback
+
+def get_notification_callback():
+    """Get the current notification callback."""
+    return _notification_callback
 
 
 # Initialize logger and tracer
@@ -377,20 +391,26 @@ async def reviewer_node(state: PostGeneratorState) -> Dict[str, Any]:
 # ROUTER NODE - Decides next action
 # ============================================================================
 
-def router_node(state: PostGeneratorState) -> Dict[str, Any]:
+async def router_node(state: PostGeneratorState) -> Dict[str, Any]:
     """
-    Router: Decides whether to refine or finalize the post.
+    Intelligent Router: Uses reasoning model to decide next workflow step.
     
-    Decision logic:
-    - If quality is acceptable: finalize
-    - If below threshold and refinements available: refine
-    - If max refinements reached: finalize anyway
+    The router:
+    1. Analyzes the current workflow state
+    2. Uses a reasoning model to think through the decision
+    3. Extracts and streams the thinking process to clients
+    4. Returns the decision with thinking metadata
+    
+    Decision logic is determined by the reasoning model based on:
+    - Current state completeness (plan, context, draft, scores)
+    - Quality thresholds and refinement limits
+    - Workflow progression requirements
     
     Args:
         state: Current workflow state
         
     Returns:
-        Updated state with final_post if ending
+        Updated state with routing decision and thinking process
     """
     user_id = state.user_id
     needs_refinement = state.needs_refinement
@@ -400,9 +420,9 @@ def router_node(state: PostGeneratorState) -> Dict[str, Any]:
     thread_id = state.thread_id
     
     with tracer.start_as_current_span(
-        "router.route_decision",
+        "router.intelligent_decision",
         attributes={
-            "agent.name": "router",
+            "agent.name": "intelligent_router",
             "agent.user_id": user_id,
             "agent.thread_id": thread_id,
             "workflow.step": "route",
@@ -412,7 +432,7 @@ def router_node(state: PostGeneratorState) -> Dict[str, Any]:
         }
     ) as span:
         logger.info(
-            f"[{user_id}][{thread_id}] ROUTER: Making routing decision for topic '{topic}'",
+            f"[{user_id}][{thread_id}] INTELLIGENT ROUTER: Analyzing state for topic '{topic}'",
             extra={
                 "user_id": user_id,
                 "thread_id": thread_id,
@@ -423,50 +443,70 @@ def router_node(state: PostGeneratorState) -> Dict[str, Any]:
             }
         )
         
-        updates = {}
+        # Create reasoning router with notification callback
+        notification_callback = get_notification_callback()
+        router = ReasoningRouter(notification_callback=notification_callback)
         
-        if not needs_refinement:
-            # Quality is acceptable - use the final_post from reviewer (or draft if not set)
+        # Get intelligent decision from reasoning model
+        router_decision: RouterDecision = await router.decide_next_node(state.model_dump())
+        
+        # Build updates with thinking process
+        updates = {
+            "router_thinking": router_decision.thinking,
+            "router_decision": router_decision.decision,
+            "next_node": router_decision.decision,
+            "current_node": "router",
+        }
+        
+        # Handle special cases based on decision
+        if router_decision.decision == "end":
+            # Finalize the post
             updates["final_post"] = state.final_post if state.final_post else state.draft
-            decision = "finalize"
-            logger.info(
-                f"[{user_id}][{thread_id}] ROUTER: Quality acceptable, finalizing post",
-                extra={"user_id": user_id, "thread_id": thread_id, "decision": decision}
-            )
-        elif refinement_count >= max_refinements:
-            # Max refinements reached - use current draft as final
-            updates["final_post"] = state.draft
+            updates["workflow_status"] = "completed"
             updates["needs_refinement"] = False
-            decision = "finalize (max refinements)"
-            logger.warning(
-                f"[{user_id}][{thread_id}] ROUTER: Max refinements ({max_refinements}) reached, finalizing anyway",
-                extra={
-                    "user_id": user_id,
-                    "thread_id": thread_id,
-                    "decision": decision,
-                    "refinement_count": refinement_count
-                }
+            logger.info(
+                f"[{user_id}][{thread_id}] ROUTER: Finalizing post",
+                extra={"user_id": user_id, "thread_id": thread_id, "decision": "end"}
+            )
+        elif router_decision.decision == "writer" and refinement_count > 0:
+            # This is a refinement loop
+            updates["refinement_count"] = refinement_count + 1
+            updates["workflow_status"] = f"refining (attempt {refinement_count + 1})"
+            logger.info(
+                f"[{user_id}][{thread_id}] ROUTER: Refinement cycle {refinement_count + 1}",
+                extra={"user_id": user_id, "thread_id": thread_id, "decision": "writer"}
             )
         else:
-            # Needs refinement - increment counter and loop back to writer
-            updates["refinement_count"] = refinement_count + 1
-            updates["final_post"] = ""  # Clear final_post for refinement loop
-            decision = f"refine (attempt {refinement_count + 2})"
-            logger.info(
-                f"[{user_id}][{thread_id}] ROUTER: Sending back for refinement (attempt {refinement_count + 2}/{max_refinements})",
-                extra={
-                    "user_id": user_id,
-                    "thread_id": thread_id,
-                    "decision": decision,
-                    "next_refinement": refinement_count + 1,
-                    "scores": state.scores,
-                    "feedback": state.feedback
-                }
-            )
+            updates["workflow_status"] = f"proceeding to {router_decision.decision}"
         
-        span.set_attribute("decision", decision)
-        span.add_event("gen_ai.router.decision", {"decision": decision})
+        # Log detailed decision info
+        span.set_attribute("router.decision", router_decision.decision)
+        span.set_attribute("router.confidence", router_decision.confidence)
+        span.set_attribute("router.thinking_length", len(router_decision.thinking))
+        span.add_event("gen_ai.router.intelligent_decision", {
+            "decision": router_decision.decision,
+            "confidence": router_decision.confidence,
+            "summary": router_decision.summary,
+            "thinking_preview": router_decision.thinking[:500] if router_decision.thinking else "",
+            "gen_ai.event.content": json.dumps({
+                "thinking": router_decision.thinking,
+                "decision": router_decision.decision,
+                "summary": router_decision.summary
+            })
+        })
         span.set_status(Status(StatusCode.OK))
+        
+        logger.info(
+            f"[{user_id}][{thread_id}] ROUTER: Decision='{router_decision.decision}' "
+            f"(confidence={router_decision.confidence:.2f}): {router_decision.summary}",
+            extra={
+                "user_id": user_id,
+                "thread_id": thread_id,
+                "decision": router_decision.decision,
+                "confidence": router_decision.confidence,
+                "thinking_length": len(router_decision.thinking)
+            }
+        )
         
         return updates
 
@@ -475,9 +515,47 @@ def router_node(state: PostGeneratorState) -> Dict[str, Any]:
 # CONDITIONAL ROUTING FUNCTION
 # ============================================================================
 
+def get_next_node(state: PostGeneratorState) -> Literal["planner", "researcher", "writer", "reviewer", "end"]:
+    """
+    Intelligent conditional edge function for routing decision.
+    
+    Uses the router's LLM-based decision stored in state.next_node.
+    Falls back to rule-based logic if next_node is not set.
+    
+    Args:
+        state: Current workflow state
+        
+    Returns:
+        Next node name based on intelligent router decision
+    """
+    # Use the intelligent router's decision
+    next_node = state.next_node
+    
+    if next_node in ["planner", "researcher", "writer", "reviewer", "end"]:
+        logger.debug(f"Routing to '{next_node}' based on intelligent router decision")
+        return next_node
+    
+    # Fallback to rule-based logic if next_node not set
+    logger.warning(f"next_node='{next_node}' is invalid, using fallback logic")
+    
+    if not state.plan:
+        return "planner"
+    elif not state.context:
+        return "researcher"
+    elif not state.draft:
+        return "writer"
+    elif not state.scores:
+        return "reviewer"
+    elif state.needs_refinement and state.refinement_count < state.max_refinements:
+        return "writer"
+    else:
+        return "end"
+
+
 def should_refine(state: PostGeneratorState) -> Literal["refine", "end"]:
     """
-    Conditional edge function for routing decision.
+    Legacy conditional edge function for routing decision.
+    Kept for backwards compatibility.
     
     Args:
         state: Current workflow state
@@ -503,20 +581,25 @@ def should_refine(state: PostGeneratorState) -> Literal["refine", "end"]:
 
 def build_post_generator_workflow() -> StateGraph:
     """
-    Build the post generator LangGraph workflow.
+    Build the post generator LangGraph workflow with intelligent routing.
     
-    Workflow structure:
-    1. Planner → Creates outline
-    2. Researcher → Retrieves context
-    3. Writer → Generates post
-    4. Reviewer → Evaluates quality
-    5. Router → Decides refine or end
-    6. (Optional) Loop back to Writer for refinement
+    Workflow structure with LLM-driven router:
+    1. Router → Analyzes state, thinks through decision, routes to next node
+    2. Planner → Creates outline (if plan needed)
+    3. Researcher → Retrieves context (if research needed)
+    4. Writer → Generates post (if draft needed)
+    5. Reviewer → Evaluates quality (if review needed)
+    6. Router → Re-analyzes and decides next step or end
+    
+    The router uses a reasoning model to:
+    - Analyze current workflow state
+    - Think through the decision (visible to user)
+    - Route to appropriate next node
     
     Returns:
         Compiled StateGraph ready for execution
     """
-     # Create workflow
+    # Create workflow
     workflow = StateGraph(PostGeneratorState)
     
     # Add nodes
@@ -526,26 +609,27 @@ def build_post_generator_workflow() -> StateGraph:
     workflow.add_node("reviewer", reviewer_node)
     workflow.add_node("router", router_node)
     
-    # Define edges (linear flow with conditional loop)
-    # For LLM driven decision making, remove the below and let the router_node return the next node name based on its logic.
-    # workflow.add_edge("router", "writer", condition=should_refine)  #
-    workflow.add_edge("planner", "researcher")
-    workflow.add_edge("researcher", "writer")
-    workflow.add_edge("writer", "reviewer")
+    # Each agent node routes back to the router for intelligent decision
+    workflow.add_edge("planner", "router")
+    workflow.add_edge("researcher", "router")
+    workflow.add_edge("writer", "router")
     workflow.add_edge("reviewer", "router")
     
-    # Conditional routing from router
+    # Intelligent routing from router based on LLM decision
     workflow.add_conditional_edges(
         "router",
-        should_refine,
+        get_next_node,
         {
-            "refine": "writer",  # Loop back for refinement
-            "end": END,          # Finish workflow
+            "planner": "planner",
+            "researcher": "researcher",
+            "writer": "writer",
+            "reviewer": "reviewer",
+            "end": END,
         }
     )
     
-    # Set entry point
-    workflow.set_entry_point("planner")
+    # Set entry point to router (it will analyze state and route to first needed node)
+    workflow.set_entry_point("router")
     return workflow
 
 

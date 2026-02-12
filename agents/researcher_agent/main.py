@@ -135,12 +135,25 @@ async def conduct_research(request: ResearchRequest):
             # Call researcher agent
             result = researcher_agent.research(state)
             
-            documents = result.get("documents", [])
+            # Extract documents - the agent stores them as "retrieved_docs" (list of dicts)
+            retrieved_docs = result.get("retrieved_docs", [])
+            
+            # Convert to list of formatted document strings
+            documents = []
+            for doc in retrieved_docs:
+                if isinstance(doc, dict):
+                    title = doc.get("title", "Untitled")
+                    content = doc.get("content", "")
+                    source = doc.get("source", "Unknown")
+                    documents.append(f"[{title}] (from {source}):\n{content}")
+                else:
+                    documents.append(str(doc))
             
             logger.info(f"✅ Research completed: {len(documents)} documents found (thread: {request.thread_id})")
             
             return ResearchResponse(
                 documents=documents,
+                retrieved_docs=retrieved_docs,
                 document_count=len(documents),
                 thread_id=request.thread_id,
                 status="success"

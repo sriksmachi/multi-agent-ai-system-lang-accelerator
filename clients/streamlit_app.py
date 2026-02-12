@@ -336,34 +336,23 @@ def generate_content_with_progress(
                             displayed["final"] = True
                     
                     elif parsed["type"] == "thinking":
-                        # Router's thinking process - display in thinking section
+                        # Router's thinking process - just track it, display after decision
                         thinking_content = parsed["content"]
                         intermediate_results["thinking"] = thinking_content
                         thinking_steps.append(thinking_content)
                         
-                        # Update thinking display with all steps
-                        if thinking_placeholder:
-                            thinking_md = ""
-                            for i, step in enumerate(thinking_steps, 1):
-                                thinking_md += f"**Step {i}:**\n\n{step}\n\n---\n\n"
-                            thinking_placeholder.markdown(thinking_md)
-                        
-                        # Also show preview in status
-                        thinking_preview = thinking_content[:100] + "..." if len(thinking_content) > 100 else thinking_content
-                        status_placeholder.info(f"🧠 {thinking_preview}")
+                        # Show in status only (expander updated when decision arrives)
+                        status_placeholder.info(f"🧠 {thinking_content}")
                     
                     elif parsed["type"] == "router_decision":
-                        # Router's decision - track and display
+                        # Router's decision - track and display with thinking
                         decision = parsed["content"]
                         intermediate_results["router_decisions"].append(decision)
                         
-                        # Add decision to thinking display
+                        # Display latest thinking + decision in the expander
                         if thinking_placeholder and thinking_steps:
-                            thinking_md = ""
-                            for i, step in enumerate(thinking_steps, 1):
-                                thinking_md += f"**Step {i}:**\n\n{step}\n\n"
-                            thinking_md += f"\n🚦 **Decision:** `{decision}`\n\n---\n\n"
-                            thinking_placeholder.markdown(thinking_md)
+                            latest_thinking = thinking_steps[-1] if thinking_steps else ""
+                            thinking_placeholder.markdown(f"{latest_thinking}\n\n🚦 **Decision:** `{decision}`")
                         
                         status_placeholder.info(f"🚦 Router → {decision}")
                     
@@ -486,7 +475,7 @@ def main():
                     with st.expander("📊 Details"):
                         # Show thinking steps if available
                         if metadata.get("thinking") or metadata.get("router_decisions"):
-                            st.markdown("**🧠 Router Thinking:**")
+                            st.markdown("**🧠 Thinking:**")
                             if metadata.get("thinking"):
                                 st.markdown(metadata["thinking"])
                             if metadata.get("router_decisions"):
@@ -553,7 +542,7 @@ def main():
             progress_placeholder = st.empty()
             
             # Expandable sections for intermediate results
-            thinking_expander = st.expander("🧠 **Router Thinking Steps**", expanded=True)
+            thinking_expander = st.expander("🧠 **Thinking...**", expanded=True)
             thinking_placeholder = thinking_expander.empty()
             
             plan_expander = st.expander("🎯 **Content Plan**", expanded=False)

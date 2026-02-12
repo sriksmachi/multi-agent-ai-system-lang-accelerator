@@ -136,7 +136,7 @@ async def generate_linkedin_post_stream(
     if not user_id:
         user_id = f"mcp-user-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-    thread_id = f"thread_{user_id}_{datetime.now().strftime('%Y%m%d')}"
+    thread_id = f"thread_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     logger.info(f"[{user_id}] FastMCP: Streaming LinkedIn post for topic: {topic}")
 
     with tracer.start_as_current_span("fastmcp_generate_linkedin_post_streaming") as span:
@@ -177,20 +177,17 @@ async def generate_linkedin_post_stream(
                 if isinstance(chunk, dict):
                     for node_name, node_output in chunk.items():
                         if isinstance(node_output, dict):
-                            # Stream router thinking from intelligent router
+                            # Track router thinking (already sent via callback, don't send again)
                             if router_thinking := node_output.get("router_thinking"):
                                 result_data["router_thinking"] = router_thinking
-                                # Send detailed thinking to client
-                                await ctx.info(f"[THINKING]{router_thinking}[/THINKING]")
                                 await ctx.report_progress(0.15, message="Router analyzing state...")
                             
-                            # Stream router decision
+                            # Track router decision (already sent via callback, don't send again)
                             if router_decision := node_output.get("router_decision"):
                                 result_data["router_decisions"].append({
                                     "decision": router_decision,
                                     "thinking": node_output.get("router_thinking", "")[:200]
                                 })
-                                await ctx.info(f"[ROUTER_DECISION]{router_decision}[/ROUTER_DECISION]")
                             
                             # Stream plan from planner
                             if plan := node_output.get("plan"):

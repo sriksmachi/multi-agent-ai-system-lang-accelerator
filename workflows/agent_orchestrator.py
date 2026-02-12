@@ -301,7 +301,7 @@ class AgentOrchestrator:
                     "user_id": state.get("user_id", ""),
                     "topic": state.get("topic", ""),
                     "plan": state.get("plan", ""),
-                    "research_documents": state.get("retrieved_docs", []),
+                    "research_documents": [state.get("context", "")] if state.get("context") else [],
                     "tone": state.get("tone", "professional"),
                     "platform": state.get("platform", "linkedin"),
                     "thread_id": state.get("thread_id", ""),

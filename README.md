@@ -351,6 +351,11 @@ For more debugging strategies, see the [MCP Debugging Guide](https://modelcontex
 
 ### 🏗️ System Architecture Diagram
 
+![MAESTRO Architecture Diagram](docs/architecture-diagram.png)
+
+<details>
+<summary>View ASCII Architecture Diagram</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
 │                                   👥 Client Applications                                 │
@@ -406,6 +411,8 @@ For more debugging strategies, see the [MCP Debugging Guide](https://modelcontex
 │                              (GPT-4o / GPT-5 Models)                                     │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 ### 📊 Workflow Orchestration
 
@@ -469,6 +476,10 @@ The reasoning router evaluates the following state attributes:
 4. **✅ Review scores** → If not reviewed, route to `reviewer`
 5. **🔧 Refinement needs** → If feedback requires changes and under max attempts, route to `writer`
 6. **🎉 Completion** → If approved or max refinements reached, route to `end`
+
+#### Azure Architecture
+
+
 
 #### ⚙️ Configuration
 

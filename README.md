@@ -19,6 +19,7 @@ A production-ready multi-agent solution accelerator for building scalable, obser
 8. [🗑️ How to Undeploy/Delete](#8-how-to-undeploydelete)
 9. [⚠️ Limitations](#9-limitations)
 10. [📝 Summary](#10-summary)
+11. [🗺️ Product Roadmap](#11-product-roadmap)
 
 ---
 
@@ -478,8 +479,6 @@ The reasoning router evaluates the following state attributes:
 6. **🎉 Completion** → If approved or max refinements reached, route to `end`
 
 #### Azure Architecture
-
-
 
 #### ⚙️ Configuration
 
@@ -1009,8 +1008,31 @@ This Multi-Agent AI System LangGraph Accelerator provides a production-ready fou
 6. [ ] 📊 (Optional) Run data pipeline for RAG capabilities
 7. [ ] ☁️ (Optional) Deploy to Azure with `azd provision`
 
+---
+
+## 1️⃣1️⃣ Product Roadmap
+
+The [MAESTRO Product Roadmap](docs/ROADMAP.md) defines the evolution of this
+accelerator from a LinkedIn post generator into a universal, autonomous,
+safety-first content generation platform.
+
+### 5 Roadmap Buckets
+
+| # | Bucket | Weeks | Headline Capability |
+|---|---|---|---|
+| **B1** | [Platform-Agnostic Content Engine](docs/ROADMAP.md#bucket-1--platform-agnostic-content-engine) | 1–4 | Any platform, any tone, any channel |
+| **B2** | [Intelligent User Understanding](docs/ROADMAP.md#bucket-2--intelligent-user-understanding) | 3–8 | Probing Q&A, User Profile, Reflexion memory |
+| **B3** | [ReAct Research & Web Intelligence](docs/ROADMAP.md#bucket-3--react-research--web-intelligence) | 5–10 | Live web search, fact checking, trend injection |
+| **B4** | [Safety, Compliance & Quality](docs/ROADMAP.md#bucket-4--safety-compliance--quality-layer) | 8–14 | Azure AI Content Safety, Compliance Agent, Brand Voice |
+| **B5** | [Ecosystem Integration & Distribution](docs/ROADMAP.md#bucket-5--ecosystem-integration--distribution) | 12–20 | Copilot Studio plugin, Publisher Agent, cross-channel |
+
+> 📄 **[View Full Roadmap →](docs/ROADMAP.md)**
+
+---
+
 ### 📚 Additional Resources
 
+- 🗺️ [Product Roadmap](docs/ROADMAP.md)
 - 📖 [FastMCP Integration Guide](docs/FASTMCP_INTEGRATION.md)
 - 🏗️ [A2A Architecture Details](docs/A2A_ARCHITECTURE.md)
 - ☁️ [Deployment Guide](docs/DEPLOYMENT_GUIDE.md)
